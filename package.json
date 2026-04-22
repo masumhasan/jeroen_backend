@@ -4,6 +4,8 @@
   "description": "jeroen_backend",
   "main": "index.js",
   "scripts": {
+    "start": "node server.js",
+    "import": "node scripts/importRecipes.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
