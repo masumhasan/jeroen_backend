@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const { Recipe } = require('../models/Recipe');
 const User = require('../models/User');
+const MealPlan = require('../models/MealPlan');
+const ShoppingList = require('../models/ShoppingList');
 const { OpenAI } = require('openai');
 
 let _openai;
@@ -384,10 +386,10 @@ const generateWeeklyMealPlan = async (userId) => {
   // Update user's meal plan
   try {
     const preferredMealTypes = normalizePreferredMealTypes(userProfile.preferences);
-    user.weeklyMealPlan = enforceDailyMealsByPreference(result.plan, preferredMealTypes, recipes);
+    const normalizedMealPlan = enforceDailyMealsByPreference(result.plan, preferredMealTypes, recipes);
 
     const recipeIds = [];
-    user.weeklyMealPlan.forEach((day) => {
+    normalizedMealPlan.forEach((day) => {
       day.meals.forEach((meal) => {
         if (meal.recipe) recipeIds.push(meal.recipe);
       });
@@ -398,15 +400,42 @@ const generateWeeklyMealPlan = async (userId) => {
       ? await Recipe.find({ _id: { $in: uniqueRecipeIds } }, 'ingredients')
       : [];
 
-    user.weeklyShoppingList = buildWeeklyShoppingList(planRecipes);
+    const normalizedShoppingList = buildWeeklyShoppingList(planRecipes);
+
+    // Persist in dedicated collections for cross-device consistency
+    await MealPlan.findOneAndUpdate(
+      { user: user._id },
+      {
+        $set: {
+          weekPlan: normalizedMealPlan,
+          generatedAt: new Date()
+        }
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    await ShoppingList.findOneAndUpdate(
+      { user: user._id },
+      {
+        $set: {
+          weeklyItems: normalizedShoppingList,
+          generatedAt: new Date()
+        }
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    // Keep legacy user fields in sync for backward compatibility
+    user.weeklyMealPlan = normalizedMealPlan;
+    user.weeklyShoppingList = normalizedShoppingList;
     await user.save();
 
-    await user.populate({
-      path: 'weeklyMealPlan.meals.recipe',
+    const mealPlanDoc = await MealPlan.findOne({ user: user._id }).populate({
+      path: 'weekPlan.meals.recipe',
       model: 'Recipe'
     });
 
-    return user.weeklyMealPlan;
+    return mealPlanDoc?.weekPlan || normalizedMealPlan;
   } catch (err) {
     console.error('Error processing or saving meal plan:', err);
     throw err;

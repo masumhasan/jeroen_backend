@@ -1,5 +1,6 @@
 const authService = require('../services/authService');
 const mealPlanService = require('../services/mealPlanService');
+const User = require('../models/User');
 const { signupSchema, signinSchema } = require('../validators/authValidator');
 
 const signup = async (req, res, next) => {
@@ -89,6 +90,141 @@ const getMealPlan = async (req, res, next) => {
   }
 };
 
+const getUsersForAdmin = async (req, res, next) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+    const status = (req.query.status || 'all').toLowerCase();
+    const search = (req.query.search || '').trim();
+
+    const filter = {};
+    if (status === 'active' || status === 'suspended') {
+      filter.accountStatus = status;
+    }
+    if (search) {
+      filter.$or = [
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const totalCount = await User.countDocuments(filter);
+    const totalPages = Math.max(Math.ceil(totalCount / limit), 1);
+    const safePage = Math.min(page, totalPages);
+    const skip = (safePage - 1) * limit;
+
+    const users = await User.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select('firstName lastName email phoneNumber createdAt accountStatus');
+
+    const mapped = users.map((user) => ({
+      id: user._id,
+      fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      email: user.email || '',
+      mobileNumber: user.phoneNumber || '',
+      profilePicture: '',
+      Joined: user.createdAt ? user.createdAt.toISOString().slice(0, 10) : '',
+      location: '',
+      status: user.accountStatus === 'suspended' ? 'Inactive' : 'Active',
+    }));
+
+    res.status(200).json({
+      success: true,
+      message: 'Users fetched successfully',
+      data: {
+        meta: {
+          page: safePage,
+          limit,
+          totalCount,
+          totalPages,
+        },
+        data: mapped,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const searchUsersForAdmin = async (req, res, next) => {
+  try {
+    const name = (req.query.name || '').trim();
+    if (!name) {
+      return res.status(200).json({
+        success: true,
+        message: 'No search term provided',
+        data: [],
+      });
+    }
+
+    const users = await User.find({
+      $or: [
+        { firstName: { $regex: name, $options: 'i' } },
+        { lastName: { $regex: name, $options: 'i' } },
+        { email: { $regex: name, $options: 'i' } },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .limit(25)
+      .select('firstName lastName email phoneNumber createdAt accountStatus');
+
+    const mapped = users.map((user) => ({
+      id: user._id,
+      fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      email: user.email || '',
+      mobileNumber: user.phoneNumber || '',
+      profilePicture: '',
+      Joined: user.createdAt ? user.createdAt.toISOString().slice(0, 10) : '',
+      location: '',
+      status: user.accountStatus === 'suspended' ? 'Inactive' : 'Active',
+    }));
+
+    res.status(200).json({
+      success: true,
+      message: 'Users search results',
+      data: mapped,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateUserStatusForAdmin = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const { status } = req.body;
+    if (!['active', 'suspended'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+
+    const updated = await User.findByIdAndUpdate(
+      userId,
+      { accountStatus: status },
+      { new: true, runValidators: true }
+    ).select('firstName lastName email accountStatus');
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'User status updated',
+      data: {
+        id: updated._id,
+        fullName: `${updated.firstName || ''} ${updated.lastName || ''}`.trim(),
+        email: updated.email,
+        status: updated.accountStatus === 'suspended' ? 'Inactive' : 'Active',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   signup,
   signin,
@@ -96,4 +232,7 @@ module.exports = {
   updateMe,
   generateMealPlan,
   getMealPlan,
+  getUsersForAdmin,
+  searchUsersForAdmin,
+  updateUserStatusForAdmin,
 };

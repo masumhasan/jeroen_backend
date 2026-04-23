@@ -56,6 +56,12 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ['Weight Loss', 'Weight Gain', 'Muscle Gain', 'Maintenance'],
     },
+    accountStatus: {
+      type: String,
+      enum: ['active', 'suspended'],
+      default: 'active',
+      index: true,
+    },
     // Dietary Preferences
     dietaryRestrictions: {
       type: [String],

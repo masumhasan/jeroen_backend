@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const MealPlan = require('../models/MealPlan');
+const ShoppingList = require('../models/ShoppingList');
 const nutritionService = require('./nutritionService');
 
 const generateToken = (id) => {
@@ -108,16 +110,7 @@ const updateUser = async (userId, updateData) => {
 };
 
 const getUserWithPlan = async (userId) => {
-  const user = await User.findById(userId).populate({
-    path: 'weeklyMealPlan',
-    populate: {
-      path: 'meals',
-      populate: {
-        path: 'recipe',
-        model: 'Recipe'
-      }
-    }
-  });
+  const user = await User.findById(userId);
   
   if (!user) {
     const error = new Error('User not found');
@@ -125,12 +118,17 @@ const getUserWithPlan = async (userId) => {
     throw error;
   }
 
-  // Log a sample to verify population
-  if (user.weeklyMealPlan && user.weeklyMealPlan.length > 0) {
-    console.log('Sample Populated Meal:', JSON.stringify(user.weeklyMealPlan[0].meals[0].recipe, null, 2));
-  }
+  const mealPlanDoc = await MealPlan.findOne({ user: userId }).populate({
+    path: 'weekPlan.meals.recipe',
+    model: 'Recipe'
+  });
+  const shoppingListDoc = await ShoppingList.findOne({ user: userId });
 
-  return user;
+  const userWithPlan = user.toObject();
+  userWithPlan.weeklyMealPlan = mealPlanDoc?.weekPlan || user.weeklyMealPlan || [];
+  userWithPlan.weeklyShoppingList = shoppingListDoc?.weeklyItems || user.weeklyShoppingList || [];
+
+  return userWithPlan;
 };
 
 module.exports = {
