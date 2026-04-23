@@ -1,4 +1,5 @@
 const authService = require('../services/authService');
+const mealPlanService = require('../services/mealPlanService');
 const { signupSchema, signinSchema } = require('../validators/authValidator');
 
 const signup = async (req, res, next) => {
@@ -55,9 +56,44 @@ const updateMe = async (req, res, next) => {
   }
 };
 
+const generateMealPlan = async (req, res, next) => {
+  try {
+    const plan = await mealPlanService.generateWeeklyMealPlan(req.user._id);
+    const user = await authService.getUserWithPlan(req.user._id);
+    res.status(200).json({
+      status: 'success',
+      data: { 
+        plan,
+        targetCalories: req.user.recommendedCalories,
+        shoppingList: user.weeklyShoppingList
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getMealPlan = async (req, res, next) => {
+  try {
+    const user = await authService.getUserWithPlan(req.user._id);
+    res.status(200).json({
+      status: 'success',
+      data: { 
+        plan: user.weeklyMealPlan,
+        targetCalories: user.recommendedCalories,
+        shoppingList: user.weeklyShoppingList
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   signup,
   signin,
   getMe,
   updateMe,
+  generateMealPlan,
+  getMealPlan,
 };

@@ -1,0 +1,418 @@
+const mongoose = require('mongoose');
+const { Recipe } = require('../models/Recipe');
+const User = require('../models/User');
+const { OpenAI } = require('openai');
+
+let _openai;
+const getOpenAIClient = () => {
+  if (!_openai) {
+    _openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return _openai;
+};
+
+const CATEGORY_MAP = {
+  'Breakfast': 'Ontbijt',
+  'Lunch': 'Lunch',
+  'Dinner': 'Diner',
+  'Snack-1': 'Snack',
+  'Snack-2': 'Snack',
+  'Snack-3': 'Snack'
+};
+
+const ALL_MEAL_TYPES = ['Breakfast', 'Snack-1', 'Lunch', 'Snack-2', 'Dinner', 'Snack-3'];
+
+const normalizeMealType = (mealType) => {
+  if (!mealType || typeof mealType !== 'string') return null;
+  const normalized = mealType.trim().toLowerCase();
+  if (normalized === 'breakfast') return 'Breakfast';
+  if (normalized === 'lunch') return 'Lunch';
+  if (normalized === 'dinner') return 'Dinner';
+  if (normalized === 'snack' || normalized === 'snack1' || normalized === 'snack-1') return 'Snack-1';
+  if (normalized === 'snack2' || normalized === 'snack-2') return 'Snack-2';
+  if (normalized === 'snack3' || normalized === 'snack-3') return 'Snack-3';
+  return null;
+};
+
+const normalizePreferredMealTypes = (preferences = []) => {
+  const normalized = (preferences || [])
+    .map(normalizeMealType)
+    .filter(Boolean);
+
+  const deduped = [...new Set(normalized)];
+  if (deduped.length > 0) return deduped;
+  return ['Breakfast', 'Lunch', 'Dinner'];
+};
+
+const SHOPPING_CATEGORIES = [
+  'Vegetables',
+  'Meat & Fish',
+  'Dairy',
+  'Grains & Breads',
+  'Spices'
+];
+
+const INGREDIENT_CATEGORY_KEYWORDS = {
+  'Vegetables': [
+    'potato', 'potatoes', 'sweet potato', 'onion', 'garlic', 'carrot', 'broccoli', 'asparagus', 'cucumber',
+    'tomato', 'spinach', 'lettuce', 'kale', 'pepper', 'zucchini', 'aubergine', 'eggplant', 'mushroom',
+    'cauliflower', 'cabbage', 'leek', 'celery', 'beet', 'radish', 'pumpkin', 'salad', 'avocado'
+  ],
+  'Meat & Fish': [
+    'chicken', 'turkey', 'beef', 'pork', 'lamb', 'veal', 'duck', 'bacon', 'ham',
+    'salmon', 'tuna', 'cod', 'shrimp', 'prawn', 'fish', 'egg', 'eggs'
+  ],
+  'Dairy': [
+    'milk', 'cheese', 'yogurt', 'yoghurt', 'cream', 'butter', 'feta', 'mozzarella',
+    'parmesan', 'ricotta', 'curd', 'kefir'
+  ],
+  'Grains & Breads': [
+    'rice', 'bread', 'pasta', 'spaghetti', 'noodle', 'quinoa', 'oat', 'oats', 'flour',
+    'couscous', 'barley', 'bulgur', 'tortilla', 'wrap', 'cracker', 'grain'
+  ],
+  'Spices': [
+    'salt', 'pepper', 'paprika', 'cumin', 'turmeric', 'oregano', 'basil', 'thyme', 'rosemary',
+    'coriander', 'chili', 'chilli', 'cinnamon', 'nutmeg', 'ginger', 'garam masala', 'spice', 'herb'
+  ]
+};
+
+const UNIT_NORMALIZATION = {
+  g: 'g',
+  gram: 'g',
+  grams: 'g',
+  gr: 'g',
+  kg: 'kg',
+  kilogram: 'kg',
+  kilograms: 'kg',
+  ml: 'ml',
+  milliliter: 'ml',
+  milliliters: 'ml',
+  l: 'l',
+  liter: 'l',
+  liters: 'l',
+  tsp: 'tsp',
+  teaspoon: 'tsp',
+  teaspoons: 'tsp',
+  tbsp: 'tbsp',
+  tablespoon: 'tbsp',
+  tablespoons: 'tbsp',
+  piece: 'pc',
+  pieces: 'pc',
+  pc: 'pc'
+};
+
+const convertToBaseUnit = (amount, unit) => {
+  if (!unit) return { value: amount, unit: 'pc' };
+  if (unit === 'kg') return { value: amount * 1000, unit: 'g' };
+  if (unit === 'l') return { value: amount * 1000, unit: 'ml' };
+  return { value: amount, unit };
+};
+
+const formatAmount = (value, unit) => {
+  if (unit === 'g' && value >= 1000) {
+    return `${(value / 1000).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}kg`;
+  }
+  if (unit === 'ml' && value >= 1000) {
+    return `${(value / 1000).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}L`;
+  }
+  if (unit === 'pc') {
+    return `${Math.round(value)}`;
+  }
+  return `${Number(value.toFixed(2)).toString()}${unit}`;
+};
+
+const parseIngredient = (ingredient) => {
+  if (!ingredient || typeof ingredient !== 'string') return null;
+
+  const text = ingredient.trim().replace(/\s+/g, ' ');
+  if (!text) return null;
+
+  const match = text.match(/^(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)?\s*(?:of\s+)?(.+)$/i);
+  if (!match) {
+    return {
+      name: text.toLowerCase(),
+      displayName: text,
+      amount: 1,
+      unit: 'pc'
+    };
+  }
+
+  const rawAmount = parseFloat(match[1].replace(',', '.'));
+  const normalizedUnit = match[2] ? UNIT_NORMALIZATION[match[2].toLowerCase()] : 'pc';
+  const ingredientName = (match[3] || '').trim();
+
+  if (!ingredientName) {
+    return {
+      name: text.toLowerCase(),
+      displayName: text,
+      amount: Number.isNaN(rawAmount) ? 1 : rawAmount,
+      unit: normalizedUnit || 'pc'
+    };
+  }
+
+  return {
+    name: ingredientName.toLowerCase(),
+    displayName: ingredientName,
+    amount: Number.isNaN(rawAmount) ? 1 : rawAmount,
+    unit: normalizedUnit || 'pc'
+  };
+};
+
+const normalizeNameForDisplay = (name) => {
+  const cleaned = name.trim();
+  if (!cleaned) return cleaned;
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+};
+
+const getIngredientCategory = (ingredientName) => {
+  const normalized = ingredientName.toLowerCase();
+
+  for (const category of SHOPPING_CATEGORIES) {
+    const keywords = INGREDIENT_CATEGORY_KEYWORDS[category] || [];
+    if (keywords.some((keyword) => normalized.includes(keyword))) {
+      return category;
+    }
+  }
+
+  return 'Spices';
+};
+
+const buildWeeklyShoppingList = (recipes) => {
+  const grouped = new Map();
+
+  recipes.forEach((recipe) => {
+    (recipe.ingredients || []).forEach((ingredientLine) => {
+      const parsed = parseIngredient(ingredientLine);
+      if (!parsed) return;
+
+      const base = convertToBaseUnit(parsed.amount, parsed.unit);
+      const key = `${parsed.name}__${base.unit}`;
+      const existing = grouped.get(key);
+
+      if (existing) {
+        existing.amount += base.value;
+      } else {
+        grouped.set(key, {
+          name: normalizeNameForDisplay(parsed.displayName || parsed.name),
+          normalizedName: parsed.name,
+          unit: base.unit,
+          amount: base.value
+        });
+      }
+    });
+  });
+
+  const byCategory = new Map(SHOPPING_CATEGORIES.map((category) => [category, []]));
+
+  for (const value of grouped.values()) {
+    const category = getIngredientCategory(value.normalizedName);
+    byCategory.get(category).push({
+      name: value.name,
+      amount: formatAmount(value.amount, value.unit)
+    });
+  }
+
+  return SHOPPING_CATEGORIES.map((category) => {
+    const items = byCategory.get(category)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return { category, items };
+  }).filter((entry) => entry.items.length > 0);
+};
+
+const enforceDailyMealsByPreference = (rawPlan, preferredMealTypes, recipes) => {
+  const recipeIdsByCategory = {};
+  Object.entries(CATEGORY_MAP).forEach(([mealType, category]) => {
+    recipeIdsByCategory[mealType] = recipes
+      .filter((recipe) => recipe.category === category)
+      .map((recipe) => recipe._id.toString());
+  });
+
+  const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  return validDays.map((dayName, dayIndex) => {
+    const aiDay = Array.isArray(rawPlan)
+      ? rawPlan.find((d) => String(d.day || '').toLowerCase() === dayName.toLowerCase()) || rawPlan[dayIndex]
+      : null;
+
+    let aiMeals = aiDay?.meals;
+    if (typeof aiMeals === 'string') {
+      try {
+        aiMeals = JSON.parse(aiMeals);
+      } catch (error) {
+        aiMeals = [];
+      }
+    }
+
+    const aiByType = new Map();
+    if (Array.isArray(aiMeals)) {
+      aiMeals.forEach((meal) => {
+        const mealType = normalizeMealType(meal?.mealType || meal?.type);
+        const recipeId = meal?.recipeId || meal?.recipe;
+        if (!mealType || !recipeId || !mongoose.Types.ObjectId.isValid(recipeId)) return;
+
+        const allowedRecipeIds = recipeIdsByCategory[mealType] || [];
+        const recipeIdString = recipeId.toString();
+        if (!allowedRecipeIds.includes(recipeIdString)) return;
+
+        if (!aiByType.has(mealType)) {
+          aiByType.set(mealType, recipeIdString);
+        }
+      });
+    }
+
+    const usedInDay = new Set();
+    const normalizedMeals = preferredMealTypes.map((mealType, preferredIndex) => {
+      let recipeId = aiByType.get(mealType);
+      const candidates = (recipeIdsByCategory[mealType] || []).filter((id) => !usedInDay.has(id));
+
+      if (!recipeId) {
+        if (candidates.length > 0) {
+          recipeId = candidates[(dayIndex + preferredIndex) % candidates.length];
+        } else {
+          recipeId = (recipeIdsByCategory[mealType] || [])[0] || null;
+        }
+      }
+
+      if (!recipeId) {
+        return null;
+      }
+
+      usedInDay.add(recipeId);
+      return {
+        mealType,
+        recipe: recipeId
+      };
+    }).filter(Boolean);
+
+    return {
+      day: dayName,
+      meals: normalizedMeals
+    };
+  });
+};
+
+const generateWeeklyMealPlan = async (userId) => {
+  const user = await User.findById(userId);
+  if (!user) throw new Error('User not found');
+
+  // Fetch all recipes summary
+  const recipes = await Recipe.find({}, 'name category nutrition');
+  
+  const recipeList = recipes.map(r => ({
+    id: r._id,
+    name: r.name,
+    category: r.category,
+    calories: r.nutrition.kcal,
+    protein: r.nutrition.eiwitten,
+    carbs: r.nutrition.khd,
+    fat: r.nutrition.vetten
+  }));
+
+  const userProfile = {
+    goal: user.goal,
+    dailyCalories: user.recommendedCalories,
+    dailyProtein: user.recommendedProtein,
+    dailyCarbs: user.recommendedCarbs,
+    dailyFat: user.recommendedFat,
+    preferences: user.mealPlanPreferences, // e.g. ["Breakfast", "Lunch", "Dinner"]
+    restrictions: user.dietaryRestrictions,
+    unwanted: user.unwantedIngredients,
+    allergies: user.allergies
+  };
+
+  const prompt = `
+    You are a professional nutritionist. Create a 7-day meal plan for a user with the following profile:
+    - Goal: ${userProfile.goal}
+    - Daily Target: ${userProfile.dailyCalories} kcal, ${userProfile.dailyProtein}g Protein, ${userProfile.dailyCarbs}g Carbs, ${userProfile.dailyFat}g Fat.
+    - Meal Preferences: ${userProfile.preferences.join(', ')}
+    - Dietary Restrictions: ${userProfile.restrictions.join(', ')}
+    - Unwanted Ingredients: ${userProfile.unwanted.join(', ')}
+    - Allergies: ${userProfile.allergies.join(', ')}
+
+    Rules:
+    1. For each day, you must select EXACTLY one recipe for each type in the user's "Meal Preferences".
+    2. The number of meals per day MUST be exactly ${userProfile.preferences.length}.
+    3. Use the following Category Mapping for selection:
+       - "Breakfast" should select from "Ontbijt" recipes.
+       - "Lunch" should select from "Lunch" recipes.
+       - "Dinner" should select from "Diner" recipes.
+       - "Snack-1", "Snack-2", "Snack-3" should select from "Snack" recipes.
+    4. The sum of calories and macros for all meals in a single day should be close to the daily target (within 10-15% margin).
+    5. Avoid repeating the same recipe within the same week if possible.
+    6. Use ONLY the recipes provided in the list below.
+    7. Provide the response in a JSON format.
+
+    Recipe List:
+    ${JSON.stringify(recipeList)}
+
+    Expected JSON Format:
+    {
+      "plan": [
+        {
+          "day": "Monday",
+          "meals": [
+            { "mealType": "Breakfast", "recipeId": "RECIPE_ID_HERE" },
+            { "mealType": "Lunch", "recipeId": "RECIPE_ID_HERE" },
+            { "mealType": "Dinner", "recipeId": "RECIPE_ID_HERE" }
+          ]
+        },
+        ... (up to Sunday)
+      ]
+    }
+    CRITICAL: Ensure "meals" is a valid JSON array of objects, NOT a string.
+  `;
+
+  const openai = getOpenAIClient();
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: 'You are a nutrition expert who provides meal plans in JSON format.' },
+      { role: 'user', content: prompt }
+    ],
+    response_format: { type: 'json_object' }
+  });
+
+  const result = JSON.parse(response.choices[0].message.content);
+  console.log('AI Meal Plan Result:', JSON.stringify(result, null, 2));
+  
+  if (!result.plan || !Array.isArray(result.plan)) {
+    throw new Error('Invalid meal plan format received from AI');
+  }
+
+  // Update user's meal plan
+  try {
+    const preferredMealTypes = normalizePreferredMealTypes(userProfile.preferences);
+    user.weeklyMealPlan = enforceDailyMealsByPreference(result.plan, preferredMealTypes, recipes);
+
+    const recipeIds = [];
+    user.weeklyMealPlan.forEach((day) => {
+      day.meals.forEach((meal) => {
+        if (meal.recipe) recipeIds.push(meal.recipe);
+      });
+    });
+
+    const uniqueRecipeIds = [...new Set(recipeIds.map((id) => id.toString()))];
+    const planRecipes = uniqueRecipeIds.length > 0
+      ? await Recipe.find({ _id: { $in: uniqueRecipeIds } }, 'ingredients')
+      : [];
+
+    user.weeklyShoppingList = buildWeeklyShoppingList(planRecipes);
+    await user.save();
+
+    await user.populate({
+      path: 'weeklyMealPlan.meals.recipe',
+      model: 'Recipe'
+    });
+
+    return user.weeklyMealPlan;
+  } catch (err) {
+    console.error('Error processing or saving meal plan:', err);
+    throw err;
+  }
+};
+
+module.exports = {
+  generateWeeklyMealPlan
+};

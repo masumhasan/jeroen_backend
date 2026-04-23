@@ -78,6 +78,50 @@ const userSchema = new mongoose.Schema(
       enum: ['Breakfast', 'Snack-1', 'Lunch', 'Snack-2', 'Dinner', 'Snack-3'],
       default: [],
     },
+    // Recommendations (AI Generated)
+    recommendedCalories: {
+      type: Number,
+      default: 2000
+    },
+    recommendedProtein: {
+      type: Number, // in grams
+      default: 150
+    },
+    recommendedCarbs: {
+      type: Number, // in grams
+      default: 250
+    },
+    recommendedFat: {
+      type: Number, // in grams
+      default: 70
+    },
+    // Weekly Meal Plan
+    weeklyMealPlan: [
+      {
+        day: String,
+        meals: [
+          {
+            mealType: String,
+            recipe: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: 'Recipe',
+            },
+          },
+        ],
+      },
+    ],
+    weeklyShoppingList: [
+      {
+        category: String,
+        items: [
+          {
+            name: String,
+            amount: String,
+            checked: { type: Boolean, default: false }
+          }
+        ]
+      }
+    ],
   },
   {
     timestamps: true,
