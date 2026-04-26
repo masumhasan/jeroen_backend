@@ -1,6 +1,7 @@
 const express = require('express');
 const { Recipe } = require('../models/Recipe');
 const upload = require('../config/multer');
+const { sanitizeIngredientList } = require('../utils/ingredientSanitizer');
 
 const router = express.Router();
 
@@ -56,6 +57,10 @@ router.get('/:id', async (req, res) => {
 router.post('/', upload.single('recipe_image'), async (req, res) => {
   try {
     const data = JSON.parse(req.body.data);
+    data.ingredients = sanitizeIngredientList(data.ingredients, 2);
+    if (data.ingredients.length === 0) {
+      return res.status(400).json({ message: 'At least one valid ingredient is required' });
+    }
     if (req.file) {
       data.recipeImage = `/uploads/${req.file.filename}`;
     }
@@ -69,6 +74,12 @@ router.post('/', upload.single('recipe_image'), async (req, res) => {
 router.put('/:id', upload.single('recipe_image'), async (req, res) => {
   try {
     const data = JSON.parse(req.body.data);
+    if (Array.isArray(data.ingredients)) {
+      data.ingredients = sanitizeIngredientList(data.ingredients, 2);
+      if (data.ingredients.length === 0) {
+        return res.status(400).json({ message: 'At least one valid ingredient is required' });
+      }
+    }
     if (req.file) {
       data.recipeImage = `/uploads/${req.file.filename}`;
     }

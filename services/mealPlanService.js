@@ -4,6 +4,11 @@ const User = require('../models/User');
 const MealPlan = require('../models/MealPlan');
 const ShoppingList = require('../models/ShoppingList');
 const { OpenAI } = require('openai');
+const {
+  normalizeIngredientText,
+  isValidIngredientLine,
+  isValidIngredientName
+} = require('../utils/ingredientSanitizer');
 
 let _openai;
 const getOpenAIClient = () => {
@@ -128,11 +133,13 @@ const formatAmount = (value, unit) => {
 const parseIngredient = (ingredient) => {
   if (!ingredient || typeof ingredient !== 'string') return null;
 
-  const text = ingredient.trim().replace(/\s+/g, ' ');
+  const text = normalizeIngredientText(ingredient);
   if (!text) return null;
+  if (!isValidIngredientLine(text, 2)) return null;
 
   const match = text.match(/^(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)?\s*(?:of\s+)?(.+)$/i);
   if (!match) {
+    if (!isValidIngredientName(text, 2)) return null;
     return {
       name: text.toLowerCase(),
       displayName: text,
@@ -143,7 +150,7 @@ const parseIngredient = (ingredient) => {
 
   const rawAmount = parseFloat(match[1].replace(',', '.'));
   const normalizedUnit = match[2] ? UNIT_NORMALIZATION[match[2].toLowerCase()] : 'pc';
-  const ingredientName = (match[3] || '').trim();
+  const ingredientName = normalizeIngredientText(match[3] || '');
 
   if (!ingredientName) {
     return {
@@ -153,6 +160,7 @@ const parseIngredient = (ingredient) => {
       unit: normalizedUnit || 'pc'
     };
   }
+  if (!isValidIngredientName(ingredientName, 2)) return null;
 
   return {
     name: ingredientName.toLowerCase(),
@@ -188,6 +196,7 @@ const buildWeeklyShoppingList = (recipes) => {
     (recipe.ingredients || []).forEach((ingredientLine) => {
       const parsed = parseIngredient(ingredientLine);
       if (!parsed) return;
+      if (!isValidIngredientName(parsed.name, 2)) return;
 
       const base = convertToBaseUnit(parsed.amount, parsed.unit);
       const key = `${parsed.name}__${base.unit}`;

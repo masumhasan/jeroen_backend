@@ -1,4 +1,5 @@
 const { DEFAULT_IMAGE } = require('../models/Recipe');
+const { sanitizeIngredientList } = require('./ingredientSanitizer');
 
 /**
  * Safely parses a numeric string that may use commas as decimal separators.
@@ -23,7 +24,7 @@ function transformRecipe(raw, bookNumber) {
     name: (raw.Name || '').trim(),
     category: mapCategory(raw.Category),
     recipeDetails: Array.isArray(raw.Recipe_Details) ? raw.Recipe_Details : [],
-    ingredients: Array.isArray(raw.Ingredients) ? raw.Ingredients : [],
+    ingredients: sanitizeIngredientList(raw.Ingredients, 2),
     cookingTip: raw.Cooking_TIP || null,
     personsServing: safeParseNumber(raw.Persons_Serving),
     nutrition: {
