@@ -11,6 +11,7 @@ const recipeRoutes = require('./routes/recipeRoutes');
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const communityRoutes = require('./routes/communityRoutes');
+const supportRoutes = require('./routes/supportRoutes');
 const errorHandler = require('./middleware/errorMiddleware');
 const connectDB = require('./config/db');
 
@@ -33,6 +34,7 @@ app.use('/api/recipes', recipeRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/community', communityRoutes);
+app.use('/api/support', supportRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
