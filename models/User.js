@@ -46,6 +46,27 @@ const userSchema = new mongoose.Schema(
     weight: {
       type: Number, // in kg
     },
+    startWeight: {
+      type: Number, // first recorded weight in kg
+      min: [0, 'Start weight cannot be negative'],
+    },
+    currentWeight: {
+      type: Number, // latest recorded weight in kg
+      min: [0, 'Current weight cannot be negative'],
+    },
+    weightHistory: [
+      {
+        weight: {
+          type: Number,
+          required: true,
+          min: [0, 'Weight cannot be negative'],
+        },
+        recordedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
     // Activity Level
     activityLevel: {
       type: String,

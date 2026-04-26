@@ -8,6 +8,7 @@ router.post('/signup', authController.signup);
 router.post('/signin', authController.signin);
 router.get('/me', protect, authController.getMe);
 router.patch('/me', protect, authController.updateMe);
+router.patch('/me/weight', protect, authController.updateMyWeight);
 
 router.get('/meal-plan', protect, authController.getMealPlan);
 router.post('/meal-plan', protect, authController.generateMealPlan);

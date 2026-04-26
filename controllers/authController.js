@@ -57,6 +57,19 @@ const updateMe = async (req, res, next) => {
   }
 };
 
+const updateMyWeight = async (req, res, next) => {
+  try {
+    const user = await authService.updateWeight(req.user._id, req.body.weight);
+
+    res.status(200).json({
+      status: 'success',
+      data: { user },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const generateMealPlan = async (req, res, next) => {
   try {
     const plan = await mealPlanService.generateWeeklyMealPlan(req.user._id);
@@ -230,6 +243,7 @@ module.exports = {
   signin,
   getMe,
   updateMe,
+  updateMyWeight,
   generateMealPlan,
   getMealPlan,
   getUsersForAdmin,
