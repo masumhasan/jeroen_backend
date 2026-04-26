@@ -451,6 +451,208 @@ const generateWeeklyMealPlan = async (userId) => {
   }
 };
 
+const getMealSwapAlternatives = async (userId, options = {}) => {
+  const {
+    day,
+    mealType,
+    recipeId,
+    search = '',
+    sort = 'calories',
+    calorieFilter = 'all'
+  } = options;
+
+  const normalizedMealType = normalizeMealType(mealType);
+  if (!day || !normalizedMealType) {
+    const error = new Error('day and mealType are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const mealPlanDoc = await MealPlan.findOne({ user: userId }).populate({
+    path: 'weekPlan.meals.recipe',
+    model: 'Recipe'
+  });
+  if (!mealPlanDoc) {
+    const error = new Error('Meal plan not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const dayEntry = (mealPlanDoc.weekPlan || []).find(
+    (entry) => String(entry.day || '').toLowerCase() === String(day).toLowerCase()
+  );
+  if (!dayEntry) {
+    const error = new Error('Day not found in meal plan');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const mealEntry = (dayEntry.meals || []).find(
+    (meal) => normalizeMealType(meal.mealType) === normalizedMealType
+  );
+  if (!mealEntry?.recipe) {
+    const error = new Error('Current meal not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const currentRecipe = mealEntry.recipe;
+  const currentRecipeId = recipeId || currentRecipe._id?.toString();
+  const currentCalories = Number(currentRecipe.nutrition?.kcal || 0);
+  const targetCategory = CATEGORY_MAP[normalizedMealType];
+
+  const query = {
+    category: targetCategory,
+    _id: { $ne: currentRecipeId },
+    'nutrition.kcal': {
+      $gte: Math.max(0, currentCalories - 100),
+      $lte: currentCalories + 100
+    }
+  };
+
+  if (search && String(search).trim()) {
+    query.name = { $regex: String(search).trim(), $options: 'i' };
+  }
+
+  let alternatives = await Recipe.find(
+    query,
+    'name category nutrition recipeImage personsServing'
+  ).lean();
+
+  alternatives = alternatives.filter((recipe) => {
+    const kcal = Number(recipe?.nutrition?.kcal || 0);
+    if (calorieFilter === '<400') return kcal < 400;
+    if (calorieFilter === '400-550') return kcal >= 400 && kcal <= 550;
+    if (calorieFilter === '>550') return kcal > 550;
+    return true;
+  });
+
+  alternatives.sort((a, b) => {
+    if (sort === 'protein') {
+      return Number(b?.nutrition?.eiwitten || 0) - Number(a?.nutrition?.eiwitten || 0);
+    }
+    if (sort === 'name') {
+      return String(a?.name || '').localeCompare(String(b?.name || ''));
+    }
+    return Number(a?.nutrition?.kcal || 0) - Number(b?.nutrition?.kcal || 0);
+  });
+
+  return {
+    currentMeal: currentRecipe,
+    alternatives
+  };
+};
+
+const swapMealInPlan = async (userId, payload = {}) => {
+  const { day, mealType, newRecipeId, currentRecipeId } = payload;
+  const normalizedMealType = normalizeMealType(mealType);
+  if (!day || !normalizedMealType || !newRecipeId) {
+    const error = new Error('day, mealType and newRecipeId are required');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!mongoose.Types.ObjectId.isValid(newRecipeId)) {
+    const error = new Error('Invalid newRecipeId');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const replacementRecipe = await Recipe.findById(newRecipeId, 'category');
+  if (!replacementRecipe) {
+    const error = new Error('Replacement recipe not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const expectedCategory = CATEGORY_MAP[normalizedMealType];
+  if (replacementRecipe.category !== expectedCategory) {
+    const error = new Error('Replacement meal must match meal type category');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const mealPlanDoc = await MealPlan.findOne({ user: userId });
+  if (!mealPlanDoc) {
+    const error = new Error('Meal plan not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const dayIndex = (mealPlanDoc.weekPlan || []).findIndex(
+    (entry) => String(entry.day || '').toLowerCase() === String(day).toLowerCase()
+  );
+  if (dayIndex < 0) {
+    const error = new Error('Day not found in meal plan');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const meals = mealPlanDoc.weekPlan[dayIndex].meals || [];
+  const mealIndex = meals.findIndex(
+    (entry) => normalizeMealType(entry.mealType) === normalizedMealType
+  );
+  if (mealIndex < 0) {
+    const error = new Error('Meal not found in selected day');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (
+    currentRecipeId &&
+    String(meals[mealIndex].recipe) !== String(currentRecipeId)
+  ) {
+    const error = new Error('Meal has changed. Refresh and try again.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  meals[mealIndex].recipe = newRecipeId;
+  mealPlanDoc.markModified('weekPlan');
+  await mealPlanDoc.save();
+
+  const recipeIds = [];
+  (mealPlanDoc.weekPlan || []).forEach((dayEntry) => {
+    (dayEntry.meals || []).forEach((mealEntry) => {
+      if (mealEntry.recipe) recipeIds.push(mealEntry.recipe.toString());
+    });
+  });
+  const uniqueRecipeIds = [...new Set(recipeIds)];
+  const planRecipes = uniqueRecipeIds.length > 0
+    ? await Recipe.find({ _id: { $in: uniqueRecipeIds } }, 'ingredients')
+    : [];
+  const normalizedShoppingList = buildWeeklyShoppingList(planRecipes);
+
+  await ShoppingList.findOneAndUpdate(
+    { user: userId },
+    {
+      $set: {
+        weeklyItems: normalizedShoppingList,
+        generatedAt: new Date()
+      }
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  const user = await User.findById(userId);
+  if (user) {
+    user.weeklyMealPlan = mealPlanDoc.weekPlan;
+    user.weeklyShoppingList = normalizedShoppingList;
+    await user.save();
+  }
+
+  const updatedPlanDoc = await MealPlan.findOne({ user: userId }).populate({
+    path: 'weekPlan.meals.recipe',
+    model: 'Recipe'
+  });
+
+  return {
+    plan: updatedPlanDoc?.weekPlan || mealPlanDoc.weekPlan,
+    shoppingList: normalizedShoppingList
+  };
+};
+
 module.exports = {
-  generateWeeklyMealPlan
+  generateWeeklyMealPlan,
+  getMealSwapAlternatives,
+  swapMealInPlan
 };

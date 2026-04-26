@@ -12,6 +12,8 @@ router.patch('/me/weight', protect, authController.updateMyWeight);
 
 router.get('/meal-plan', protect, authController.getMealPlan);
 router.post('/meal-plan', protect, authController.generateMealPlan);
+router.get('/meal-plan/swap-alternatives', protect, authController.getMealSwapAlternatives);
+router.patch('/meal-plan/swap', protect, authController.swapMeal);
 
 // Dashboard user management
 router.get('/admin/users', authController.getUsersForAdmin);

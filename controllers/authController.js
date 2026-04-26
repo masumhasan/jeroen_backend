@@ -103,6 +103,39 @@ const getMealPlan = async (req, res, next) => {
   }
 };
 
+const getMealSwapAlternatives = async (req, res, next) => {
+  try {
+    const { day, mealType, recipeId, search, sort, calorieFilter } = req.query;
+    const result = await mealPlanService.getMealSwapAlternatives(req.user._id, {
+      day,
+      mealType,
+      recipeId,
+      search,
+      sort,
+      calorieFilter
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const swapMeal = async (req, res, next) => {
+  try {
+    const result = await mealPlanService.swapMealInPlan(req.user._id, req.body);
+    res.status(200).json({
+      status: 'success',
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getUsersForAdmin = async (req, res, next) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -246,6 +279,8 @@ module.exports = {
   updateMyWeight,
   generateMealPlan,
   getMealPlan,
+  getMealSwapAlternatives,
+  swapMeal,
   getUsersForAdmin,
   searchUsersForAdmin,
   updateUserStatusForAdmin,
