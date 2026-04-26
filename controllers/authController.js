@@ -1,6 +1,7 @@
 const authService = require('../services/authService');
 const mealPlanService = require('../services/mealPlanService');
 const User = require('../models/User');
+const MealPlan = require('../models/MealPlan');
 const { signupSchema, signinSchema } = require('../validators/authValidator');
 
 const signup = async (req, res, next) => {
@@ -97,6 +98,50 @@ const getMealPlan = async (req, res, next) => {
         targetCalories: user.recommendedCalories,
         shoppingList: user.weeklyShoppingList
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Lightweight payload for the mobile Progress screen (no recipe population).
+ */
+const getProgress = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const [user, mealPlan] = await Promise.all([
+      User.findById(userId)
+        .select(
+          'createdAt weight startWeight currentWeight targetWeight weightHistory recommendedCalories'
+        )
+        .lean(),
+      MealPlan.findOne({ user: userId }).select('weekPlan').lean()
+    ]);
+
+    if (!user) {
+      return res.status(404).json({ status: 'error', message: 'User not found' });
+    }
+
+    let weightHistory = Array.isArray(user.weightHistory) ? user.weightHistory : [];
+    if (weightHistory.length > 60) {
+      weightHistory = weightHistory.slice(-60);
+    }
+
+    let mealsPlannedCount = 0;
+    if (mealPlan?.weekPlan) {
+      for (const day of mealPlan.weekPlan) {
+        mealsPlannedCount += Array.isArray(day.meals) ? day.meals.length : 0;
+      }
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        user: { ...user, weightHistory },
+        mealsPlannedCount,
+        targetCalories: user.recommendedCalories ?? req.user.recommendedCalories ?? 0
+      }
     });
   } catch (error) {
     next(error);
@@ -279,6 +324,7 @@ module.exports = {
   updateMyWeight,
   generateMealPlan,
   getMealPlan,
+  getProgress,
   getMealSwapAlternatives,
   swapMeal,
   getUsersForAdmin,
