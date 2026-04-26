@@ -96,6 +96,11 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    followedTopics: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'Topic',
+      default: [],
+    },
     targetWeight: {
       type: Number, // in kg
     },

@@ -10,6 +10,7 @@ const helmet = require('helmet');
 const recipeRoutes = require('./routes/recipeRoutes');
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const communityRoutes = require('./routes/communityRoutes');
 const errorHandler = require('./middleware/errorMiddleware');
 const connectDB = require('./config/db');
 
@@ -31,6 +32,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/recipes', recipeRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/community', communityRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
