@@ -30,6 +30,22 @@ const postSchema = new mongoose.Schema(
       required: true,
       index: true
     },
+    topics: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Topic'
+        }
+      ],
+      default: [],
+      index: true,
+      validate: {
+        validator: function (value) {
+          return Array.isArray(value) && value.length > 0;
+        },
+        message: 'At least one topic is required'
+      }
+    },
     content: {
       type: String,
       required: true,
@@ -55,5 +71,15 @@ const postSchema = new mongoose.Schema(
 );
 
 postSchema.index({ createdAt: -1 });
+
+postSchema.pre('validate', function (next) {
+  if ((!this.topics || this.topics.length === 0) && this.topic) {
+    this.topics = [this.topic];
+  }
+  if ((!this.topic || String(this.topic).trim() === '') && this.topics?.length) {
+    this.topic = this.topics[0];
+  }
+  next();
+});
 
 module.exports = mongoose.model('Post', postSchema);

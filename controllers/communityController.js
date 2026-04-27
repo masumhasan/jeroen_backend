@@ -2,6 +2,39 @@ const Topic = require('../models/Topic');
 const Post = require('../models/Post');
 const User = require('../models/User');
 
+const parseTopicIdsFromBody = (body) => {
+  const directTopicIds = body.topicIds;
+  const singleTopicId = body.topicId;
+
+  let parsedTopicIds = [];
+
+  if (Array.isArray(directTopicIds)) {
+    parsedTopicIds = directTopicIds;
+  } else if (typeof directTopicIds === 'string') {
+    const raw = directTopicIds.trim();
+    if (raw.startsWith('[')) {
+      try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) parsedTopicIds = arr;
+      } catch (_error) {
+        parsedTopicIds = [raw];
+      }
+    } else if (raw.length > 0) {
+      parsedTopicIds = raw.includes(',') ? raw.split(',') : [raw];
+    }
+  }
+
+  if (parsedTopicIds.length === 0 && singleTopicId) {
+    parsedTopicIds = [singleTopicId];
+  }
+
+  const normalized = parsedTopicIds
+    .map((id) => String(id || '').trim())
+    .filter(Boolean);
+
+  return [...new Set(normalized)];
+};
+
 const getTopics = async (req, res, next) => {
   try {
     const search = String(req.query.search || '').trim();
@@ -59,15 +92,41 @@ const toggleFollowTopic = async (req, res, next) => {
 };
 
 const buildFeedPostResponse = (post, meId) => ({
+  topics: Array.isArray(post.topics)
+    ? post.topics
+        .filter(Boolean)
+        .map((item) => {
+          if (item._id) {
+            return {
+              id: item._id,
+              name: item.name,
+              color: item.color
+            };
+          }
+          return { id: item };
+        })
+    : [],
   id: post._id,
   content: post.content,
   image: post.image,
   createdAt: post.createdAt,
-  topic: post.topic
+  topic:
+    (Array.isArray(post.topics) && post.topics.length > 0
+      ? post.topics[0]
+      : post.topic)
     ? {
-        id: post.topic._id,
-        name: post.topic.name,
-        color: post.topic.color
+        id:
+          (Array.isArray(post.topics) && post.topics.length > 0
+            ? post.topics[0]?._id || post.topics[0]
+            : post.topic?._id || post.topic),
+        name:
+          (Array.isArray(post.topics) && post.topics.length > 0
+            ? post.topics[0]?.name
+            : post.topic?.name) || 'Topic',
+        color:
+          (Array.isArray(post.topics) && post.topics.length > 0
+            ? post.topics[0]?.color
+            : post.topic?.color) || '#89957F'
       }
     : null,
   user: post.user
@@ -94,7 +153,9 @@ const getFeed = async (req, res, next) => {
       return res.status(200).json({ status: 'success', data: { posts: [] } });
     }
 
-    const query = { topic: { $in: followedTopics } };
+    const query = {
+      $or: [{ topic: { $in: followedTopics } }, { topics: { $in: followedTopics } }]
+    };
     if (search) {
       query.content = { $regex: search, $options: 'i' };
     }
@@ -103,6 +164,7 @@ const getFeed = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .populate('user', 'firstName lastName')
       .populate('topic', 'name color')
+      .populate('topics', 'name color')
       .lean();
 
     res.status(200).json({
@@ -116,27 +178,31 @@ const getFeed = async (req, res, next) => {
 
 const createPost = async (req, res, next) => {
   try {
-    const { topicId, content } = req.body;
-    if (!topicId || !content || !String(content).trim()) {
-      return res.status(400).json({ message: 'topicId and content are required' });
+    const { content } = req.body;
+    const topicIds = parseTopicIdsFromBody(req.body);
+
+    if (!topicIds.length || !content || !String(content).trim()) {
+      return res.status(400).json({ message: 'topicIds and content are required' });
     }
 
-    const topic = await Topic.findById(topicId).lean();
-    if (!topic) {
-      return res.status(404).json({ message: 'Topic not found' });
+    const topics = await Topic.find({ _id: { $in: topicIds } }).select('_id').lean();
+    if (topics.length !== topicIds.length) {
+      return res.status(404).json({ message: 'One or more topics not found' });
     }
 
     const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
     const post = await Post.create({
       user: req.user._id,
-      topic: topicId,
+      topic: topicIds[0],
+      topics: topicIds,
       content: String(content).trim(),
       image: imagePath
     });
 
     const populated = await Post.findById(post._id)
       .populate('user', 'firstName lastName')
-      .populate('topic', 'name color');
+      .populate('topic', 'name color')
+      .populate('topics', 'name color');
 
     res.status(201).json({
       status: 'success',
@@ -152,6 +218,7 @@ const getPostDetails = async (req, res, next) => {
     const post = await Post.findById(req.params.postId)
       .populate('user', 'firstName lastName')
       .populate('topic', 'name color')
+      .populate('topics', 'name color')
       .populate('comments.user', 'firstName lastName')
       .lean();
 
@@ -283,6 +350,7 @@ const updatePost = async (req, res, next) => {
     const populated = await Post.findById(post._id)
       .populate('user', 'firstName lastName')
       .populate('topic', 'name color')
+      .populate('topics', 'name color')
       .lean();
 
     res.status(200).json({
@@ -367,7 +435,7 @@ const deleteTopicByAdmin = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Topic not found' });
     }
     await Promise.all([
-      Post.deleteMany({ topic: topic._id }),
+      Post.deleteMany({ $or: [{ topic: topic._id }, { topics: topic._id }] }),
       User.updateMany(
         { followedTopics: topic._id },
         { $pull: { followedTopics: topic._id } }
