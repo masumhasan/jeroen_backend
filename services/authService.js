@@ -36,12 +36,13 @@ const registerUser = async (userData) => {
   }
   
   // Merge recommendations into userData with sensible defaults
-  const finalUserData = { 
-    ...userData, 
+  const finalUserData = {
+    ...userData,
+    role: 'user',
     recommendedCalories: recommendations.recommendedCalories || 2000,
     recommendedProtein: recommendations.recommendedProtein || 150,
     recommendedCarbs: recommendations.recommendedCarbs || 250,
-    recommendedFat: recommendations.recommendedFat || 70
+    recommendedFat: recommendations.recommendedFat || 70,
   };
 
   const signupWeight = parseWeightNumber(finalUserData.weight);
@@ -80,6 +81,7 @@ const loginUser = async (email, password) => {
 const updateUser = async (userId, updateData) => {
   // Prevent password updates via this endpoint
   delete updateData.password;
+  delete updateData.role;
   const existingUser = await User.findById(userId);
   if (!existingUser) {
     const error = new Error('User not found');
@@ -204,10 +206,92 @@ const getUserWithPlan = async (userId) => {
   return userWithPlan;
 };
 
+const ALLOWED_ROLES = ['user', 'moderator', 'admin', 'superadmin'];
+
+/**
+ * Ensures env-configured superadmin exists (creates if missing; keeps existing record).
+ */
+const ensureSuperAdminUser = async () => {
+  const email = (process.env.SUPERADMIN_EMAIL || '').trim().toLowerCase();
+  const password = process.env.SUPERADMIN_PASSWORD || '';
+  if (!email || !password) {
+    console.warn('SUPERADMIN_EMAIL / SUPERADMIN_PASSWORD not set — skipping superadmin bootstrap.');
+    return;
+  }
+
+  const existing = await User.findOne({ email });
+  if (existing) {
+    if (existing.role !== 'superadmin') {
+      existing.role = 'superadmin';
+      await existing.save({ validateBeforeSave: true });
+      console.log('✓ Superadmin role ensured for:', email);
+    }
+    return;
+  }
+
+  const defaultPhone = '+31600000001';
+  let phoneNumber = (process.env.SUPERADMIN_PHONE || defaultPhone).trim();
+  const phoneTaken = await User.findOne({ phoneNumber });
+  if (phoneTaken) {
+    phoneNumber = `+31639${Date.now().toString().slice(-7)}`;
+  }
+
+  await User.create({
+    firstName: 'Support',
+    lastName: 'Admin',
+    email,
+    phoneNumber,
+    password,
+    role: 'superadmin',
+    recommendedCalories: 2000,
+    recommendedProtein: 150,
+    recommendedCarbs: 250,
+    recommendedFat: 70,
+  });
+  console.log('✓ Superadmin user created:', email);
+};
+
+/**
+ * Dashboard-only: admin may set user|moderator|admin; superadmin may also set superadmin.
+ */
+const updateUserRole = async (actor, targetUserId, newRole) => {
+  if (!ALLOWED_ROLES.includes(newRole)) {
+    const error = new Error('Invalid role');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const actorRole = (actor.role || 'user').toLowerCase();
+  if (!['admin', 'superadmin'].includes(actorRole)) {
+    const error = new Error('Forbidden');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (newRole === 'superadmin' && actorRole !== 'superadmin') {
+    const error = new Error('Only a superadmin can assign the superadmin role');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const target = await User.findById(targetUserId);
+  if (!target) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  target.role = newRole;
+  await target.save({ validateBeforeSave: true });
+  return target;
+};
+
 module.exports = {
   registerUser,
   loginUser,
   updateUser,
   updateWeight,
   getUserWithPlan,
+  ensureSuperAdminUser,
+  updateUserRole,
 };

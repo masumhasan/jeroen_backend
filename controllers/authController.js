@@ -34,6 +34,27 @@ const signin = async (req, res, next) => {
   }
 };
 
+/** Same as signin but rejects accounts that may not use the dashboard (mobile `user` role). */
+const dashboardSignin = async (req, res, next) => {
+  try {
+    const validatedData = signinSchema.parse(req.body);
+    const result = await authService.loginUser(validatedData.email, validatedData.password);
+    const role = (result.user.role || 'user').toLowerCase();
+    if (!['moderator', 'admin', 'superadmin'].includes(role)) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'This account is not allowed to access the dashboard.',
+      });
+    }
+    res.status(200).json({
+      status: 'success',
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getMe = async (req, res, next) => {
   try {
     res.status(200).json({
@@ -209,7 +230,7 @@ const getUsersForAdmin = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .select('firstName lastName email phoneNumber createdAt accountStatus');
+      .select('firstName lastName email phoneNumber createdAt accountStatus role');
 
     const mapped = users.map((user) => ({
       id: user._id,
@@ -220,6 +241,7 @@ const getUsersForAdmin = async (req, res, next) => {
       Joined: user.createdAt ? user.createdAt.toISOString().slice(0, 10) : '',
       location: '',
       status: user.accountStatus === 'suspended' ? 'Inactive' : 'Active',
+      role: user.role || 'user',
     }));
 
     res.status(200).json({
@@ -260,7 +282,7 @@ const searchUsersForAdmin = async (req, res, next) => {
     })
       .sort({ createdAt: -1 })
       .limit(25)
-      .select('firstName lastName email phoneNumber createdAt accountStatus');
+      .select('firstName lastName email phoneNumber createdAt accountStatus role');
 
     const mapped = users.map((user) => ({
       id: user._id,
@@ -271,6 +293,7 @@ const searchUsersForAdmin = async (req, res, next) => {
       Joined: user.createdAt ? user.createdAt.toISOString().slice(0, 10) : '',
       location: '',
       status: user.accountStatus === 'suspended' ? 'Inactive' : 'Active',
+      role: user.role || 'user',
     }));
 
     res.status(200).json({
@@ -283,33 +306,70 @@ const searchUsersForAdmin = async (req, res, next) => {
   }
 };
 
-const updateUserStatusForAdmin = async (req, res, next) => {
+const updateUserRoleForAdmin = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const { status } = req.body;
-    if (!['active', 'suspended'].includes(status)) {
-      return res.status(400).json({ success: false, message: 'Invalid status' });
+    const role = String(req.body.role || '').toLowerCase();
+    const updated = await authService.updateUserRole(req.user, userId, role);
+    res.status(200).json({
+      success: true,
+      message: 'User role updated',
+      data: {
+        id: updated._id,
+        role: updated.role,
+        fullName: `${updated.firstName || ''} ${updated.lastName || ''}`.trim(),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Dashboard staff may delete users; cannot delete self. Role rules mirror dashboard UX. */
+const deleteUserForAdmin = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const actorId = String(req.user._id);
+    if (String(userId) === actorId) {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot delete your own account',
+      });
     }
 
-    const updated = await User.findByIdAndUpdate(
-      userId,
-      { accountStatus: status },
-      { new: true, runValidators: true }
-    ).select('firstName lastName email accountStatus');
-
-    if (!updated) {
+    const target = await User.findById(userId).select('_id role firstName lastName email');
+    if (!target) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
+    const actorRole = String(req.user.role || 'user').toLowerCase();
+    const targetRole = String(target.role || 'user').toLowerCase();
+
+    if (actorRole === 'moderator') {
+      if (targetRole !== 'user') {
+        return res.status(403).json({
+          success: false,
+          message: 'Moderators may only delete accounts with the user role',
+        });
+      }
+    } else if (actorRole === 'admin') {
+      if (targetRole === 'superadmin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Cannot delete a superadmin account',
+        });
+      }
+    } else if (actorRole !== 'superadmin') {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const fullName = `${target.firstName || ''} ${target.lastName || ''}`.trim();
+    await User.deleteOne({ _id: target._id });
+
     res.status(200).json({
       success: true,
-      message: 'User status updated',
-      data: {
-        id: updated._id,
-        fullName: `${updated.firstName || ''} ${updated.lastName || ''}`.trim(),
-        email: updated.email,
-        status: updated.accountStatus === 'suspended' ? 'Inactive' : 'Active',
-      },
+      message: 'User deleted',
+      data: { id: target._id, fullName, email: target.email },
     });
   } catch (error) {
     next(error);
@@ -319,6 +379,7 @@ const updateUserStatusForAdmin = async (req, res, next) => {
 module.exports = {
   signup,
   signin,
+  dashboardSignin,
   getMe,
   updateMe,
   updateMyWeight,
@@ -329,5 +390,6 @@ module.exports = {
   swapMeal,
   getUsersForAdmin,
   searchUsersForAdmin,
-  updateUserStatusForAdmin,
+  updateUserRoleForAdmin,
+  deleteUserForAdmin,
 };

@@ -83,6 +83,13 @@ const userSchema = new mongoose.Schema(
       default: 'active',
       index: true,
     },
+    /** App signups default to `user`. Dashboard staff: moderator, admin, superadmin. */
+    role: {
+      type: String,
+      enum: ['user', 'moderator', 'admin', 'superadmin'],
+      default: 'user',
+      index: true,
+    },
     // Dietary Preferences
     dietaryRestrictions: {
       type: [String],
