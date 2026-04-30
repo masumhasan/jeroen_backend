@@ -17,6 +17,23 @@ const parseWeightNumber = (value) => {
   return Number(numeric.toFixed(1));
 };
 
+/**
+ * Returns whether email/phone are free to use for signup (no user created).
+ */
+const checkSignupAvailability = async ({ email, phoneNumber }) => {
+  const normEmail = String(email || '').trim().toLowerCase();
+  const normPhone = String(phoneNumber || '').trim();
+  const [emailTaken, phoneTaken] = await Promise.all([
+    User.exists({ email: normEmail }),
+    User.exists({ phoneNumber: normPhone }),
+  ]);
+  return {
+    available: !emailTaken && !phoneTaken,
+    emailTaken: !!emailTaken,
+    phoneTaken: !!phoneTaken,
+  };
+};
+
 const registerUser = async (userData) => {
   const { email, phoneNumber } = userData;
 
@@ -340,6 +357,7 @@ const updateUserRole = async (actor, targetUserId, newRole) => {
 
 module.exports = {
   registerUser,
+  checkSignupAvailability,
   loginUser,
   updateUser,
   updateWeight,

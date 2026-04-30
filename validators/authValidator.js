@@ -24,7 +24,14 @@ const signinSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+/** Pre-onboarding: email + phone only (same rules as signup core fields). */
+const signupAvailabilitySchema = z.object({
+  email: z.string().email('Invalid email address'),
+  phoneNumber: z.string().min(8, 'Phone number is too short'),
+});
+
 module.exports = {
   signupSchema,
   signinSchema,
+  signupAvailabilitySchema,
 };

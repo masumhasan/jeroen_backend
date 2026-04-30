@@ -2,7 +2,11 @@ const authService = require('../services/authService');
 const mealPlanService = require('../services/mealPlanService');
 const User = require('../models/User');
 const MealPlan = require('../models/MealPlan');
-const { signupSchema, signinSchema } = require('../validators/authValidator');
+const {
+  signupSchema,
+  signinSchema,
+  signupAvailabilitySchema,
+} = require('../validators/authValidator');
 
 const signup = async (req, res, next) => {
   console.log('--- SIGNUP START ---');
@@ -16,6 +20,41 @@ const signup = async (req, res, next) => {
     });
   } catch (error) {
     console.error('Signup error:', error);
+    next(error);
+  }
+};
+
+/** Before onboarding: validate email/phone format and duplicate accounts. */
+const checkSignupAvailability = async (req, res, next) => {
+  try {
+    const { email, phoneNumber } = signupAvailabilitySchema.parse(req.body);
+    const normEmail = email.trim().toLowerCase();
+    const normPhone = phoneNumber.trim();
+    const result = await authService.checkSignupAvailability({
+      email: normEmail,
+      phoneNumber: normPhone,
+    });
+    if (!result.available) {
+      let message = 'This email or phone number is already registered.';
+      if (result.emailTaken && result.phoneTaken) {
+        message = 'An account with this email and phone number already exists.';
+      } else if (result.emailTaken) {
+        message = 'An account with this email already exists.';
+      } else if (result.phoneTaken) {
+        message = 'An account with this phone number already exists.';
+      }
+      return res.status(409).json({
+        status: 'fail',
+        message,
+        emailTaken: result.emailTaken,
+        phoneTaken: result.phoneTaken,
+      });
+    }
+    res.status(200).json({
+      status: 'success',
+      data: { available: true },
+    });
+  } catch (error) {
     next(error);
   }
 };
@@ -378,6 +417,7 @@ const deleteUserForAdmin = async (req, res, next) => {
 
 module.exports = {
   signup,
+  checkSignupAvailability,
   signin,
   dashboardSignin,
   getMe,
