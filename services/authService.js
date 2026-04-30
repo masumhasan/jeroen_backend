@@ -262,14 +262,15 @@ const getUserWithPlan = async (userId) => {
     throw error;
   }
 
-  const mealPlanDoc = await MealPlan.findOne({ user: userId }).populate({
-    path: 'weekPlan.meals.recipe',
-    model: 'Recipe'
-  });
+  const mealPlanDoc = await MealPlan.findOne({ user: userId })
+    .populate({ path: 'weekPlan.meals.recipe', model: 'Recipe' })
+    .populate({ path: 'nextWeekPlan.meals.recipe', model: 'Recipe' });
   const shoppingListDoc = await ShoppingList.findOne({ user: userId });
 
   const userWithPlan = user.toObject();
   userWithPlan.weeklyMealPlan = mealPlanDoc?.weekPlan || user.weeklyMealPlan || [];
+  userWithPlan.nextWeekMealPlan = mealPlanDoc?.nextWeekPlan || user.nextWeekMealPlan || [];
+  userWithPlan.nextWeekStartDate = mealPlanDoc?.nextWeekStartDate || user.nextWeekStartDate || null;
   userWithPlan.weeklyShoppingList = shoppingListDoc?.weeklyItems || user.weeklyShoppingList || [];
 
   return userWithPlan;

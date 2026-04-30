@@ -133,14 +133,18 @@ const updateMyWeight = async (req, res, next) => {
 
 const generateMealPlan = async (req, res, next) => {
   try {
-    const plan = await mealPlanService.generateWeeklyMealPlan(req.user._id);
+    const nextWeek = req.body.nextWeek === true;
+    const result = await mealPlanService.generateWeeklyMealPlan(req.user._id, { nextWeek });
     const user = await authService.getUserWithPlan(req.user._id);
     res.status(200).json({
       status: 'success',
       data: { 
-        plan,
+        plan: result.plan,
+        nextWeekPlan: result.nextWeekPlan,
         targetCalories: req.user.recommendedCalories,
         weekStartDay: user.weekStartDay || 'Monday',
+        mealPlanStartDate: result.weekStartDate || user.mealPlanStartDate || null,
+        nextWeekStartDate: result.nextWeekStartDate || null,
         shoppingList: user.weeklyShoppingList
       },
     });
@@ -156,8 +160,11 @@ const getMealPlan = async (req, res, next) => {
       status: 'success',
       data: { 
         plan: user.weeklyMealPlan,
+        nextWeekPlan: user.nextWeekMealPlan || [],
         targetCalories: user.recommendedCalories,
         weekStartDay: user.weekStartDay || 'Monday',
+        mealPlanStartDate: user.mealPlanStartDate || null,
+        nextWeekStartDate: user.nextWeekStartDate || null,
         shoppingList: user.weeklyShoppingList
       },
     });

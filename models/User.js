@@ -145,6 +145,10 @@ const userSchema = new mongoose.Schema(
     aiBaselineProteinG: { type: Number },
     aiBaselineCarbsG: { type: Number },
     aiBaselineFatG: { type: Number },
+    /** The calendar date the current weekly meal plan starts from. */
+    mealPlanStartDate: {
+      type: Date,
+    },
     // Weekly Meal Plan
     weeklyMealPlan: [
       {
@@ -160,6 +164,24 @@ const userSchema = new mongoose.Schema(
         ],
       },
     ],
+    // Next Week Meal Plan (populated when "Generate Next Week" is used)
+    nextWeekMealPlan: [
+      {
+        day: String,
+        meals: [
+          {
+            mealType: String,
+            recipe: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: 'Recipe',
+            },
+          },
+        ],
+      },
+    ],
+    nextWeekStartDate: {
+      type: Date,
+    },
     weeklyShoppingList: [
       {
         category: String,

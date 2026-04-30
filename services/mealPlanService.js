@@ -305,6 +305,7 @@ const enforceDailyMealsByPreference = (rawPlan, preferredMealTypes, recipes) => 
 };
 
 const ORDERED_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const DAY_NAME_TO_JS = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
 
 /** Build a 7-day name list starting from the user's chosen weekStartDay. */
 const orderedDayNames = (startDay = 'Monday') => {
@@ -313,9 +314,47 @@ const orderedDayNames = (startDay = 'Monday') => {
   return [...ORDERED_DAYS.slice(start), ...ORDERED_DAYS.slice(0, start)];
 };
 
-const generateWeeklyMealPlan = async (userId) => {
+/**
+ * Compute the start-of-week calendar date.
+ * – For a normal (re)generate: the most recent occurrence of weekStartDay
+ *   that is <= today (i.e. the current week).
+ * – For "next week": shift that date forward by 7 days.
+ */
+const computeWeekStartDate = (weekStartDay = 'Monday', nextWeek = false) => {
+  const targetJS = DAY_NAME_TO_JS[weekStartDay] ?? 1;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const todayJS = today.getDay();
+  let diff = todayJS - targetJS;
+  if (diff < 0) diff += 7;
+
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - diff);
+
+  if (nextWeek) startDate.setDate(startDate.getDate() + 7);
+
+  return startDate;
+};
+
+const generateWeeklyMealPlan = async (userId, { nextWeek = false } = {}) => {
   const user = await User.findById(userId);
   if (!user) throw new Error('User not found');
+
+  let weekStartDate;
+  if (nextWeek) {
+    // Compute from the latest stored week boundary so generation is truly additive
+    const existingDoc = await MealPlan.findOne({ user: user._id });
+    const latestStart = existingDoc?.nextWeekStartDate || existingDoc?.weekStartDate || null;
+    if (latestStart) {
+      weekStartDate = new Date(latestStart);
+      weekStartDate.setDate(weekStartDate.getDate() + 7);
+    } else {
+      weekStartDate = computeWeekStartDate(user.weekStartDay, true);
+    }
+  } else {
+    weekStartDate = computeWeekStartDate(user.weekStartDay, false);
+  }
 
   const weekDays = orderedDayNames(user.weekStartDay);
 
@@ -423,17 +462,86 @@ const generateWeeklyMealPlan = async (userId) => {
 
     const normalizedShoppingList = buildWeeklyShoppingList(planRecipes);
 
-    // Persist in dedicated collections for cross-device consistency
-    await MealPlan.findOneAndUpdate(
-      { user: user._id },
-      {
-        $set: {
-          weekPlan: normalizedMealPlan,
-          generatedAt: new Date()
+    if (nextWeek) {
+      // If a next-week plan already exists, promote it to current week first
+      const existingDoc = await MealPlan.findOne({ user: user._id });
+      const hadPreviousNextWeek = existingDoc?.nextWeekPlan?.length > 0;
+
+      if (hadPreviousNextWeek) {
+        const promotedStart = existingDoc.nextWeekStartDate;
+        const promotedPlan = existingDoc.nextWeekPlan;
+        await MealPlan.findOneAndUpdate(
+          { user: user._id },
+          {
+            $set: {
+              weekPlan: promotedPlan,
+              weekStartDate: promotedStart,
+              nextWeekPlan: normalizedMealPlan,
+              nextWeekStartDate: weekStartDate,
+            }
+          }
+        );
+        await User.updateOne(
+          { _id: user._id },
+          {
+            $set: {
+              weeklyMealPlan: promotedPlan,
+              mealPlanStartDate: promotedStart,
+              nextWeekMealPlan: normalizedMealPlan,
+              nextWeekStartDate: weekStartDate,
+            },
+          }
+        );
+      } else {
+        await MealPlan.findOneAndUpdate(
+          { user: user._id },
+          {
+            $set: {
+              nextWeekPlan: normalizedMealPlan,
+              nextWeekStartDate: weekStartDate,
+            }
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+        await User.updateOne(
+          { _id: user._id },
+          {
+            $set: {
+              nextWeekMealPlan: normalizedMealPlan,
+              nextWeekStartDate: weekStartDate,
+            },
+          }
+        );
+      }
+    } else {
+      // Regular (re)generation — replaces current week and clears any next-week data
+      await MealPlan.findOneAndUpdate(
+        { user: user._id },
+        {
+          $set: {
+            weekPlan: normalizedMealPlan,
+            weekStartDate,
+            nextWeekPlan: [],
+            nextWeekStartDate: null,
+            generatedAt: new Date()
+          }
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+
+      await User.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            weeklyMealPlan: normalizedMealPlan,
+            weeklyShoppingList: normalizedShoppingList,
+            mealPlanStartDate: weekStartDate,
+            nextWeekMealPlan: [],
+            nextWeekStartDate: null,
+          },
         }
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+      );
+    }
 
     await ShoppingList.findOneAndUpdate(
       { user: user._id },
@@ -446,24 +554,16 @@ const generateWeeklyMealPlan = async (userId) => {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
-    // Keep legacy user fields in sync (atomic update — avoids VersionError if __v changed
-    // during the long OpenAI request, e.g. concurrent PATCH /auth/me or profile updates).
-    await User.updateOne(
-      { _id: user._id },
-      {
-        $set: {
-          weeklyMealPlan: normalizedMealPlan,
-          weeklyShoppingList: normalizedShoppingList,
-        },
-      }
-    );
+    const mealPlanDoc = await MealPlan.findOne({ user: user._id })
+      .populate({ path: 'weekPlan.meals.recipe', model: 'Recipe' })
+      .populate({ path: 'nextWeekPlan.meals.recipe', model: 'Recipe' });
 
-    const mealPlanDoc = await MealPlan.findOne({ user: user._id }).populate({
-      path: 'weekPlan.meals.recipe',
-      model: 'Recipe'
-    });
-
-    return mealPlanDoc?.weekPlan || normalizedMealPlan;
+    return {
+      plan: mealPlanDoc?.weekPlan || normalizedMealPlan,
+      nextWeekPlan: mealPlanDoc?.nextWeekPlan || [],
+      weekStartDate: mealPlanDoc?.weekStartDate || weekStartDate,
+      nextWeekStartDate: mealPlanDoc?.nextWeekStartDate || null,
+    };
   } catch (err) {
     console.error('Error processing or saving meal plan:', err);
     throw err;

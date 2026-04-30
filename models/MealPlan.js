@@ -44,6 +44,17 @@ const mealPlanSchema = new mongoose.Schema(
       type: [dayPlanSchema],
       default: []
     },
+    /** The calendar date this plan week starts from. */
+    weekStartDate: {
+      type: Date,
+    },
+    nextWeekPlan: {
+      type: [dayPlanSchema],
+      default: []
+    },
+    nextWeekStartDate: {
+      type: Date,
+    },
     generatedAt: {
       type: Date,
       default: Date.now
