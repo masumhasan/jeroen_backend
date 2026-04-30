@@ -304,9 +304,20 @@ const enforceDailyMealsByPreference = (rawPlan, preferredMealTypes, recipes) => 
   });
 };
 
+const ORDERED_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+/** Build a 7-day name list starting from the user's chosen weekStartDay. */
+const orderedDayNames = (startDay = 'Monday') => {
+  const idx = ORDERED_DAYS.indexOf(startDay);
+  const start = idx >= 0 ? idx : 0;
+  return [...ORDERED_DAYS.slice(start), ...ORDERED_DAYS.slice(0, start)];
+};
+
 const generateWeeklyMealPlan = async (userId) => {
   const user = await User.findById(userId);
   if (!user) throw new Error('User not found');
+
+  const weekDays = orderedDayNames(user.weekStartDay);
 
   // Fetch all recipes summary
   const recipes = await Recipe.find({}, 'name category nutrition');
@@ -327,7 +338,7 @@ const generateWeeklyMealPlan = async (userId) => {
     dailyProtein: user.recommendedProtein,
     dailyCarbs: user.recommendedCarbs,
     dailyFat: user.recommendedFat,
-    preferences: user.mealPlanPreferences, // e.g. ["Breakfast", "Lunch", "Dinner"]
+    preferences: user.mealPlanPreferences,
     restrictions: user.dietaryRestrictions,
     unwanted: user.unwantedIngredients,
     allergies: user.allergies
@@ -354,6 +365,7 @@ const generateWeeklyMealPlan = async (userId) => {
     5. Avoid repeating the same recipe within the same week if possible.
     6. Use ONLY the recipes provided in the list below.
     7. Provide the response in a JSON format.
+    8. The week starts on ${weekDays[0]}. Order the days as: ${weekDays.join(', ')}.
 
     Recipe List:
     ${JSON.stringify(recipeList)}
@@ -362,14 +374,14 @@ const generateWeeklyMealPlan = async (userId) => {
     {
       "plan": [
         {
-          "day": "Monday",
+          "day": "${weekDays[0]}",
           "meals": [
             { "mealType": "Breakfast", "recipeId": "RECIPE_ID_HERE" },
             { "mealType": "Lunch", "recipeId": "RECIPE_ID_HERE" },
             { "mealType": "Dinner", "recipeId": "RECIPE_ID_HERE" }
           ]
         },
-        ... (up to Sunday)
+        ... (7 days total, in the order above)
       ]
     }
     CRITICAL: Ensure "meals" is a valid JSON array of objects, NOT a string.

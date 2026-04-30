@@ -140,6 +140,7 @@ const generateMealPlan = async (req, res, next) => {
       data: { 
         plan,
         targetCalories: req.user.recommendedCalories,
+        weekStartDay: user.weekStartDay || 'Monday',
         shoppingList: user.weeklyShoppingList
       },
     });
@@ -156,6 +157,7 @@ const getMealPlan = async (req, res, next) => {
       data: { 
         plan: user.weeklyMealPlan,
         targetCalories: user.recommendedCalories,
+        weekStartDay: user.weekStartDay || 'Monday',
         shoppingList: user.weeklyShoppingList
       },
     });

@@ -111,6 +111,12 @@ const userSchema = new mongoose.Schema(
     targetWeight: {
       type: Number, // in kg
     },
+    /** Which day the user's weekly meal plan starts on (default Monday). */
+    weekStartDay: {
+      type: String,
+      enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+      default: 'Monday',
+    },
     // Meal Plan Preferences
     mealPlanPreferences: {
       type: [String],

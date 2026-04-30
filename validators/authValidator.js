@@ -17,6 +17,7 @@ const signupSchema = z.object({
   allergies: z.array(z.string()).optional(),
   targetWeight: z.number().min(0).optional(),
   mealPlanPreferences: z.array(z.enum(['Breakfast', 'Snack-1', 'Lunch', 'Snack-2', 'Dinner', 'Snack-3'])).optional(),
+  weekStartDay: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).optional(),
 });
 
 const signinSchema = z.object({
