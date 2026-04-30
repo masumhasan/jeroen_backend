@@ -35,14 +35,23 @@ const registerUser = async (userData) => {
     console.error('Failed to generate recommendations:', err);
   }
   
+  const recCal = recommendations.recommendedCalories || 2000;
+  const recP = recommendations.recommendedProtein || 150;
+  const recC = recommendations.recommendedCarbs || 250;
+  const recF = recommendations.recommendedFat || 70;
+
   // Merge recommendations into userData with sensible defaults
   const finalUserData = {
     ...userData,
     role: 'user',
-    recommendedCalories: recommendations.recommendedCalories || 2000,
-    recommendedProtein: recommendations.recommendedProtein || 150,
-    recommendedCarbs: recommendations.recommendedCarbs || 250,
-    recommendedFat: recommendations.recommendedFat || 70,
+    recommendedCalories: recCal,
+    recommendedProtein: recP,
+    recommendedCarbs: recC,
+    recommendedFat: recF,
+    aiBaselineCalories: recCal,
+    aiBaselineProteinG: recP,
+    aiBaselineCarbsG: recC,
+    aiBaselineFatG: recF,
   };
 
   const signupWeight = parseWeightNumber(finalUserData.weight);
@@ -110,8 +119,51 @@ const updateUser = async (userId, updateData) => {
       };
       const recommendations = await nutritionService.generateRecommendations(mergedData);
       Object.assign(updateData, recommendations);
+      if (recommendations.recommendedCalories != null) {
+        updateData.aiBaselineCalories = recommendations.recommendedCalories;
+        updateData.aiBaselineProteinG = recommendations.recommendedProtein;
+        updateData.aiBaselineCarbsG = recommendations.recommendedCarbs;
+        updateData.aiBaselineFatG = recommendations.recommendedFat;
+      }
     } catch (err) {
       console.error('Failed to regenerate recommendations during update:', err);
+    }
+  }
+
+  const touchesNutritionTargets = [
+    'recommendedCalories',
+    'recommendedProtein',
+    'recommendedCarbs',
+    'recommendedFat',
+  ].some((f) => updateData[f] !== undefined);
+
+  if (touchesNutritionTargets) {
+    const nextCal = updateData.recommendedCalories ?? existingUser.recommendedCalories;
+    const nextP = updateData.recommendedProtein ?? existingUser.recommendedProtein;
+    const nextC = updateData.recommendedCarbs ?? existingUser.recommendedCarbs;
+    const nextF = updateData.recommendedFat ?? existingUser.recommendedFat;
+    const macroCal =
+      (Number(nextP) || 0) * 4 + (Number(nextC) || 0) * 4 + (Number(nextF) || 0) * 9;
+    if (!Number.isFinite(Number(nextCal)) || Number(nextCal) < 1) {
+      const err = new Error('Target calories must be at least 1');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (
+      (Number(nextP) || 0) < 0 ||
+      (Number(nextC) || 0) < 0 ||
+      (Number(nextF) || 0) < 0
+    ) {
+      const err = new Error('Macro targets must be non-negative');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (macroCal > Number(nextCal) + 0.5) {
+      const err = new Error(
+        'Macros exceed daily calories (4 kcal/g protein & carbs, 9 kcal/g fat). Reduce grams or increase calories.'
+      );
+      err.statusCode = 400;
+      throw err;
     }
   }
 

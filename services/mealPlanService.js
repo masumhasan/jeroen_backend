@@ -434,10 +434,17 @@ const generateWeeklyMealPlan = async (userId) => {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
-    // Keep legacy user fields in sync for backward compatibility
-    user.weeklyMealPlan = normalizedMealPlan;
-    user.weeklyShoppingList = normalizedShoppingList;
-    await user.save();
+    // Keep legacy user fields in sync (atomic update — avoids VersionError if __v changed
+    // during the long OpenAI request, e.g. concurrent PATCH /auth/me or profile updates).
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          weeklyMealPlan: normalizedMealPlan,
+          weeklyShoppingList: normalizedShoppingList,
+        },
+      }
+    );
 
     const mealPlanDoc = await MealPlan.findOne({ user: user._id }).populate({
       path: 'weekPlan.meals.recipe',
@@ -633,12 +640,15 @@ const swapMealInPlan = async (userId, payload = {}) => {
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
-  const user = await User.findById(userId);
-  if (user) {
-    user.weeklyMealPlan = mealPlanDoc.weekPlan;
-    user.weeklyShoppingList = normalizedShoppingList;
-    await user.save();
-  }
+  await User.updateOne(
+    { _id: userId },
+    {
+      $set: {
+        weeklyMealPlan: mealPlanDoc.weekPlan,
+        weeklyShoppingList: normalizedShoppingList,
+      },
+    }
+  );
 
   const updatedPlanDoc = await MealPlan.findOne({ user: userId }).populate({
     path: 'weekPlan.meals.recipe',

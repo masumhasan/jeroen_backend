@@ -134,6 +134,11 @@ const userSchema = new mongoose.Schema(
       type: Number, // in grams
       default: 70
     },
+    /** Snapshot from last AI recommendation (signup / profile-driven regen); "Recommended" on target screen. */
+    aiBaselineCalories: { type: Number },
+    aiBaselineProteinG: { type: Number },
+    aiBaselineCarbsG: { type: Number },
+    aiBaselineFatG: { type: Number },
     // Weekly Meal Plan
     weeklyMealPlan: [
       {
