@@ -1,8 +1,12 @@
 const express = require('express');
 const authController = require('../controllers/authController');
+const catalogController = require('../controllers/catalogController');
 const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
+
+router.get('/catalog/allergies', catalogController.getAllergiesList);
+router.get('/catalog/dietary-preferences', catalogController.getDietaryPreferencesList);
 
 router.post('/signup', authController.signup);
 router.post('/signup/check-availability', authController.checkSignupAvailability);
