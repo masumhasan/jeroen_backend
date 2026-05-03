@@ -18,7 +18,7 @@ const parseWeightNumber = (value) => {
 };
 
 /**
- * Returns whether email/phone are free to use for signup (no user created).
+ * Returns whether email/phone are free to use for signup (no user created) .
  */
 const checkSignupAvailability = async ({ email, phoneNumber }) => {
   const normEmail = String(email || '').trim().toLowerCase();
