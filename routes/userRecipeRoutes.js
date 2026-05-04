@@ -125,7 +125,7 @@ router.post('/', protect, upload.single('recipe_image'), async (req, res) => {
   }
 });
 
-// PUT update own user recipe (only if still pending)
+// PUT update own user recipe (resets status to pending if previously approved/declined)
 router.put('/:id', protect, upload.single('recipe_image'), async (req, res) => {
   try {
     const existing = await UserRecipe.findById(req.params.id);
@@ -145,7 +145,7 @@ router.put('/:id', protect, upload.single('recipe_image'), async (req, res) => {
       data.recipeImage = `/uploads/${req.file.filename}`;
     }
     delete data.submittedBy;
-    delete data.status;
+    data.status = 'pending';
 
     const recipe = await UserRecipe.findByIdAndUpdate(req.params.id, data, {
       new: true,
