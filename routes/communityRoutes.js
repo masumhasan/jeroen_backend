@@ -9,6 +9,7 @@ router.get('/topics', protect, communityController.getTopics);
 router.patch('/topics/:topicId/follow', protect, communityController.toggleFollowTopic);
 
 router.get('/feed', protect, communityController.getFeed);
+router.post('/posts/meal-plan', protect, communityController.shareMealPlan);
 router.post('/posts', protect, upload.single('post_image'), communityController.createPost);
 router.patch('/posts/:postId', protect, communityController.updatePost);
 router.delete('/posts/:postId', protect, communityController.deletePost);

@@ -1,6 +1,9 @@
+const path = require('path');
+const fs = require('fs');
 const Topic = require('../models/Topic');
 const Post = require('../models/Post');
 const User = require('../models/User');
+const { buildMealPlanHtml } = require('../utils/mealPlanTemplate');
 
 const parseTopicIdsFromBody = (body) => {
   const directTopicIds = body.topicIds;
@@ -137,6 +140,9 @@ const buildFeedPostResponse = (post, meId) => ({
         fullName: `${post.user.firstName || ''} ${post.user.lastName || ''}`.trim(),
       }
     : null,
+  postType: post.postType || 'text',
+  mealPlanData: post.mealPlanData || null,
+  mealPlanHtml: post.mealPlanHtml || null,
   likeCount: (post.likedBy || []).length,
   commentCount: (post.comments || []).length,
   likedByMe: (post.likedBy || []).some((id) => String(id) === String(meId)),
@@ -447,11 +453,101 @@ const deleteTopicByAdmin = async (req, res, next) => {
   }
 };
 
+const shareMealPlan = async (req, res, next) => {
+  try {
+    const { caption, topicIds: rawTopicIds, mealPlanData } = req.body;
+
+    if (!mealPlanData || !Array.isArray(mealPlanData.meals) || mealPlanData.meals.length === 0) {
+      return res.status(400).json({ message: 'mealPlanData with at least one meal is required' });
+    }
+
+    const topicIds = Array.isArray(rawTopicIds)
+      ? rawTopicIds.map((id) => String(id).trim()).filter(Boolean)
+      : [];
+
+    if (topicIds.length === 0) {
+      return res.status(400).json({ message: 'At least one topicId is required' });
+    }
+
+    const topics = await Topic.find({ _id: { $in: topicIds } }).select('_id').lean();
+    if (topics.length === 0) {
+      return res.status(404).json({ message: 'One or more topics not found' });
+    }
+
+    const totalCalories = mealPlanData.meals.reduce((sum, m) => sum + (Number(m.calories) || 0), 0);
+    const totalProtein = mealPlanData.meals.reduce((sum, m) => sum + (Number(m.protein) || 0), 0);
+    const totalCarbs = mealPlanData.meals.reduce((sum, m) => sum + (Number(m.carbs) || 0), 0);
+    const totalFat = mealPlanData.meals.reduce((sum, m) => sum + (Number(m.fat) || 0), 0);
+
+    const structuredData = {
+      day: mealPlanData.day || 'Today',
+      targetCalories: Number(mealPlanData.targetCalories) || totalCalories,
+      meals: mealPlanData.meals.map((m) => ({
+        mealType: String(m.mealType || 'Meal'),
+        name: String(m.name || 'Unknown'),
+        calories: Number(m.calories) || 0,
+        protein: Number(m.protein) || 0,
+        carbs: Number(m.carbs) || 0,
+        fat: Number(m.fat) || 0,
+        image: m.image || null
+      })),
+      totalCalories,
+      totalProtein,
+      totalCarbs,
+      totalFat
+    };
+
+    const mealPlanHtml = buildMealPlanHtml(structuredData);
+
+    let imagePath = null;
+    try {
+      const nodeHtmlToImage = require('node-html-to-image');
+      const uploadsDir = path.join(__dirname, '..', 'uploads');
+      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+      const filename = `mealplan-${Date.now()}-${Math.round(Math.random() * 1e9)}.png`;
+      const outputPath = path.join(uploadsDir, filename);
+      await nodeHtmlToImage({
+        output: outputPath,
+        html: mealPlanHtml,
+        transparent: false,
+        puppeteerArgs: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }
+      });
+      imagePath = `/uploads/${filename}`;
+    } catch (imgErr) {
+      console.error('Meal plan image generation failed (non-fatal):', imgErr.message);
+    }
+
+    const post = await Post.create({
+      user: req.user._id,
+      topic: topicIds[0],
+      topics: topicIds,
+      content: String(caption || '').trim() || 'Shared my daily meal plan',
+      postType: 'meal_plan',
+      mealPlanData: structuredData,
+      mealPlanHtml,
+      image: imagePath
+    });
+
+    const populated = await Post.findById(post._id)
+      .populate('user', 'firstName lastName')
+      .populate('topic', 'name color')
+      .populate('topics', 'name color');
+
+    res.status(201).json({
+      status: 'success',
+      data: { post: buildFeedPostResponse(populated.toObject(), req.user._id) }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getTopics,
   toggleFollowTopic,
   getFeed,
   createPost,
+  shareMealPlan,
   updatePost,
   deletePost,
   getPostDetails,

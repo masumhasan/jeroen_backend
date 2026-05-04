@@ -48,9 +48,36 @@ const postSchema = new mongoose.Schema(
     },
     content: {
       type: String,
-      required: true,
       trim: true,
       maxlength: [2000, 'Post content must be at most 2000 characters']
+    },
+    postType: {
+      type: String,
+      enum: ['text', 'meal_plan'],
+      default: 'text'
+    },
+    mealPlanData: {
+      day: { type: String },
+      targetCalories: { type: Number },
+      meals: [
+        {
+          mealType: { type: String },
+          name: { type: String },
+          calories: { type: Number },
+          protein: { type: Number },
+          carbs: { type: Number },
+          fat: { type: Number },
+          image: { type: String }
+        }
+      ],
+      totalCalories: { type: Number },
+      totalProtein: { type: Number },
+      totalCarbs: { type: Number },
+      totalFat: { type: Number }
+    },
+    mealPlanHtml: {
+      type: String,
+      default: null
     },
     image: {
       type: String,
@@ -78,6 +105,9 @@ postSchema.pre('validate', function (next) {
   }
   if ((!this.topic || String(this.topic).trim() === '') && this.topics?.length) {
     this.topic = this.topics[0];
+  }
+  if (!this.content && this.postType === 'meal_plan') {
+    this.content = 'Shared my daily meal plan';
   }
   next();
 });
