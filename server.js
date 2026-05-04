@@ -8,6 +8,7 @@ const morgan = require('morgan');
 const helmet = require('helmet');
 
 const recipeRoutes = require('./routes/recipeRoutes');
+const userRecipeRoutes = require('./routes/userRecipeRoutes');
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const communityRoutes = require('./routes/communityRoutes');
@@ -32,6 +33,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
 app.use('/api/recipes', recipeRoutes);
+app.use('/api/user-recipes', userRecipeRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/community', communityRoutes);
