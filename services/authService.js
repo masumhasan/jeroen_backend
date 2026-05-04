@@ -3,6 +3,7 @@ const User = require('../models/User');
 const MealPlan = require('../models/MealPlan');
 const ShoppingList = require('../models/ShoppingList');
 const nutritionService = require('./nutritionService');
+const { populateWeekPlanRecipes } = require('../utils/populateRecipes');
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -262,14 +263,18 @@ const getUserWithPlan = async (userId) => {
     throw error;
   }
 
-  const mealPlanDoc = await MealPlan.findOne({ user: userId })
-    .populate({ path: 'weekPlan.meals.recipe', model: 'Recipe' })
-    .populate({ path: 'nextWeekPlan.meals.recipe', model: 'Recipe' });
+  const mealPlanDoc = await MealPlan.findOne({ user: userId });
   const shoppingListDoc = await ShoppingList.findOne({ user: userId });
 
+  const rawWeekPlan = mealPlanDoc?.weekPlan || user.weeklyMealPlan || [];
+  const rawNextWeekPlan = mealPlanDoc?.nextWeekPlan || user.nextWeekMealPlan || [];
+
+  const populatedWeekPlan = await populateWeekPlanRecipes(rawWeekPlan);
+  const populatedNextWeekPlan = await populateWeekPlanRecipes(rawNextWeekPlan);
+
   const userWithPlan = user.toObject();
-  userWithPlan.weeklyMealPlan = mealPlanDoc?.weekPlan || user.weeklyMealPlan || [];
-  userWithPlan.nextWeekMealPlan = mealPlanDoc?.nextWeekPlan || user.nextWeekMealPlan || [];
+  userWithPlan.weeklyMealPlan = populatedWeekPlan;
+  userWithPlan.nextWeekMealPlan = populatedNextWeekPlan;
   userWithPlan.nextWeekStartDate = mealPlanDoc?.nextWeekStartDate || user.nextWeekStartDate || null;
   userWithPlan.weeklyShoppingList = shoppingListDoc?.weeklyItems || user.weeklyShoppingList || [];
 

@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { Recipe } = require('../models/Recipe');
+const { UserRecipe } = require('../models/UserRecipe');
 const User = require('../models/User');
 const MealPlan = require('../models/MealPlan');
 const ShoppingList = require('../models/ShoppingList');
@@ -30,6 +31,8 @@ const CATEGORY_MAP = {
 };
 
 const ALL_MEAL_TYPES = ['Breakfast', 'Snack-1', 'Lunch', 'Snack-2', 'Dinner', 'Snack-3'];
+
+const { populateWeekPlanRecipes } = require('../utils/populateRecipes');
 
 const normalizeMealType = (mealType) => {
   if (!mealType || typeof mealType !== 'string') return null;
@@ -554,13 +557,14 @@ const generateWeeklyMealPlan = async (userId, { nextWeek = false } = {}) => {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
-    const mealPlanDoc = await MealPlan.findOne({ user: user._id })
-      .populate({ path: 'weekPlan.meals.recipe', model: 'Recipe' })
-      .populate({ path: 'nextWeekPlan.meals.recipe', model: 'Recipe' });
+    const mealPlanDoc = await MealPlan.findOne({ user: user._id });
+
+    const populatedWeekPlan = await populateWeekPlanRecipes(mealPlanDoc?.weekPlan || normalizedMealPlan);
+    const populatedNextWeekPlan = await populateWeekPlanRecipes(mealPlanDoc?.nextWeekPlan || []);
 
     return {
-      plan: mealPlanDoc?.weekPlan || normalizedMealPlan,
-      nextWeekPlan: mealPlanDoc?.nextWeekPlan || [],
+      plan: populatedWeekPlan,
+      nextWeekPlan: populatedNextWeekPlan,
       weekStartDate: mealPlanDoc?.weekStartDate || weekStartDate,
       nextWeekStartDate: mealPlanDoc?.nextWeekStartDate || null,
     };
@@ -676,11 +680,16 @@ const swapMealInPlan = async (userId, payload = {}) => {
     throw error;
   }
 
-  const replacementRecipe = await Recipe.findById(newRecipeId, 'category');
+  let replacementRecipe = await Recipe.findById(newRecipeId, 'category');
+  let isUserRecipe = false;
   if (!replacementRecipe) {
-    const error = new Error('Replacement recipe not found');
-    error.statusCode = 404;
-    throw error;
+    replacementRecipe = await UserRecipe.findById(newRecipeId, 'category submittedBy');
+    if (!replacementRecipe) {
+      const error = new Error('Replacement recipe not found');
+      error.statusCode = 404;
+      throw error;
+    }
+    isUserRecipe = true;
   }
 
   const expectedCategory = CATEGORY_MAP[normalizedMealType];
@@ -736,9 +745,13 @@ const swapMealInPlan = async (userId, payload = {}) => {
     });
   });
   const uniqueRecipeIds = [...new Set(recipeIds)];
-  const planRecipes = uniqueRecipeIds.length > 0
-    ? await Recipe.find({ _id: { $in: uniqueRecipeIds } }, 'ingredients')
-    : [];
+  const [mainRecipes, userRecipes] = uniqueRecipeIds.length > 0
+    ? await Promise.all([
+        Recipe.find({ _id: { $in: uniqueRecipeIds } }, 'ingredients'),
+        UserRecipe.find({ _id: { $in: uniqueRecipeIds } }, 'ingredients'),
+      ])
+    : [[], []];
+  const planRecipes = [...mainRecipes, ...userRecipes];
   const normalizedShoppingList = buildWeeklyShoppingList(planRecipes);
 
   await ShoppingList.findOneAndUpdate(
@@ -762,13 +775,13 @@ const swapMealInPlan = async (userId, payload = {}) => {
     }
   );
 
-  const updatedPlanDoc = await MealPlan.findOne({ user: userId }).populate({
-    path: 'weekPlan.meals.recipe',
-    model: 'Recipe'
-  });
+  const updatedPlanDoc = await MealPlan.findOne({ user: userId });
+  const populatedPlan = await populateWeekPlanRecipes(
+    updatedPlanDoc?.weekPlan || mealPlanDoc.weekPlan
+  );
 
   return {
-    plan: updatedPlanDoc?.weekPlan || mealPlanDoc.weekPlan,
+    plan: populatedPlan,
     shoppingList: normalizedShoppingList
   };
 };
