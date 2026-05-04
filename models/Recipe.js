@@ -22,13 +22,17 @@ const recipeSchema = new mongoose.Schema({
     minlength: [2, 'Name must be at least 2 characters'],
   },
   category: {
-    type: String,
+    type: [String],
     required: [true, 'Category is required'],
-    trim: true,
-    enum: {
-      values: ['Ontbijt', 'Lunch', 'Diner', 'Snack', 'Dranken', 'Uncategorised'],
-      message: '{VALUE} is not a valid category',
+    validate: {
+      validator: (v) => Array.isArray(v) && v.length > 0,
+      message: 'At least one category is required',
     },
+    set: (v) => {
+      if (typeof v === 'string') return [v];
+      return v;
+    },
+    enum: ['Ontbijt', 'Lunch', 'Diner', 'Snack', 'Dranken', 'Uncategorised'],
   },
   recipeDetails: {
     type: [String],

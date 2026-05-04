@@ -239,7 +239,10 @@ const enforceDailyMealsByPreference = (rawPlan, preferredMealTypes, recipes) => 
   const recipeIdsByCategory = {};
   Object.entries(CATEGORY_MAP).forEach(([mealType, category]) => {
     recipeIdsByCategory[mealType] = recipes
-      .filter((recipe) => recipe.category === category)
+      .filter((recipe) => {
+        const cats = Array.isArray(recipe.category) ? recipe.category : [recipe.category];
+        return cats.includes(category);
+      })
       .map((recipe) => recipe._id.toString());
   });
 
@@ -625,7 +628,7 @@ const getMealSwapAlternatives = async (userId, options = {}) => {
   const targetCategory = CATEGORY_MAP[normalizedMealType];
 
   const query = {
-    category: targetCategory,
+    category: { $in: [targetCategory] },
     _id: { $ne: currentRecipeId },
     'nutrition.kcal': {
       $gte: Math.max(0, currentCalories - 100),
@@ -693,7 +696,10 @@ const swapMealInPlan = async (userId, payload = {}) => {
   }
 
   const expectedCategory = CATEGORY_MAP[normalizedMealType];
-  if (replacementRecipe.category !== expectedCategory) {
+  const replacementCategories = Array.isArray(replacementRecipe.category)
+    ? replacementRecipe.category
+    : [replacementRecipe.category];
+  if (!replacementCategories.includes(expectedCategory)) {
     const error = new Error('Replacement meal must match meal type category');
     error.statusCode = 400;
     throw error;

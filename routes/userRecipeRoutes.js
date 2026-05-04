@@ -18,7 +18,7 @@ router.get('/', async (req, res) => {
       query.name = { $regex: escaped, $options: 'i' };
     }
     if (category && category !== 'All') {
-      query.category = category;
+      query.category = { $in: [category] };
     }
     if (status && status !== 'All') {
       query.status = status;
@@ -58,7 +58,7 @@ router.get('/approved', async (req, res) => {
       query.name = { $regex: escaped, $options: 'i' };
     }
     if (category && category !== 'All') {
-      query.category = category;
+      query.category = { $in: [category] };
     }
 
     const skip = (Number(page) - 1) * Number(limit);
