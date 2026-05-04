@@ -32,6 +32,39 @@ const CATEGORY_MAP = {
 
 const ALL_MEAL_TYPES = ['Breakfast', 'Snack-1', 'Lunch', 'Snack-2', 'Dinner', 'Snack-3'];
 
+const DIETARY_RESTRICTION_EXCLUSIONS = {
+  'Veganistisch': ['vlees', 'kip', 'kipfilet', 'gehakt', 'rundvlees', 'varkensvlees', 'spek', 'bacon', 'ham', 'worst', 'vis', 'zalm', 'tonijn', 'garnalen', 'ei', 'eieren', 'melk', 'kaas', 'boter', 'room', 'yoghurt', 'honing', 'chicken', 'meat', 'beef', 'pork', 'fish', 'salmon', 'tuna', 'shrimp', 'egg', 'milk', 'cheese', 'butter', 'cream', 'yogurt', 'honey'],
+  'Pescatarisch': ['vlees', 'kip', 'kipfilet', 'gehakt', 'rundvlees', 'varkensvlees', 'spek', 'bacon', 'ham', 'worst', 'chicken', 'meat', 'beef', 'pork'],
+  'Glutenvrij': ['gluten', 'tarwe', 'bloem', 'pasta', 'brood', 'couscous', 'bulgur', 'wheat', 'flour', 'bread'],
+  'Lactosevrij': ['melk', 'kaas', 'boter', 'room', 'yoghurt', 'kwark', 'milk', 'cheese', 'butter', 'cream', 'yogurt'],
+  'Keto': ['suiker', 'rijst', 'pasta', 'brood', 'aardappel', 'aardappelen', 'bloem', 'haver', 'sugar', 'rice', 'potato', 'flour', 'oats'],
+  'Koolhydraatbeperkt': ['suiker', 'rijst', 'pasta', 'brood', 'aardappel', 'aardappelen', 'bloem', 'sugar', 'rice', 'potato', 'flour'],
+  'Laag koolhydraatgehalte': ['suiker', 'rijst', 'pasta', 'brood', 'aardappel', 'aardappelen', 'bloem', 'sugar', 'rice', 'potato', 'flour'],
+  'Paleo': ['granen', 'bonen', 'linzen', 'pasta', 'brood', 'rijst', 'melk', 'kaas', 'suiker', 'grains', 'beans', 'lentils', 'rice', 'bread', 'milk', 'cheese', 'sugar'],
+};
+
+const getExcludedIngredients = (user) => {
+  const allergyTerms = [
+    ...(user.unwantedIngredients || []),
+    ...(user.allergies || []),
+  ].map(term => term.toLowerCase());
+
+  const userRestrictions = user.dietaryRestrictions || [];
+  const restrictionExclusions = userRestrictions.flatMap(
+    restriction => (DIETARY_RESTRICTION_EXCLUSIONS[restriction] || [])
+  );
+
+  return [...new Set([...allergyTerms, ...restrictionExclusions.map(t => t.toLowerCase())])];
+};
+
+const filterRecipesByDiet = (recipes, excludedTerms) => {
+  if (!excludedTerms.length) return recipes;
+  return recipes.filter(recipe => {
+    const ingredientText = (recipe.ingredients || []).join(' ').toLowerCase();
+    return !excludedTerms.some(term => ingredientText.includes(term));
+  });
+};
+
 const { populateWeekPlanRecipes } = require('../utils/populateRecipes');
 
 const normalizeMealType = (mealType) => {
@@ -364,9 +397,13 @@ const generateWeeklyMealPlan = async (userId, { nextWeek = false } = {}) => {
 
   const weekDays = orderedDayNames(user.weekStartDay);
 
-  // Fetch all recipes summary
-  const recipes = await Recipe.find({}, 'name category nutrition');
-  
+  // Fetch all recipes with ingredients for dietary filtering
+  const allRecipes = await Recipe.find({}, 'name category nutrition ingredients');
+
+  // Pre-filter recipes based on user dietary restrictions and allergies
+  const excludedTerms = getExcludedIngredients(user);
+  const recipes = filterRecipesByDiet(allRecipes, excludedTerms);
+
   const recipeList = recipes.map(r => ({
     id: r._id,
     name: r.name,
@@ -408,9 +445,10 @@ const generateWeeklyMealPlan = async (userId, { nextWeek = false } = {}) => {
        - "Snack-1", "Snack-2", "Snack-3" should select from "Snack" recipes.
     4. The sum of calories and macros for all meals in a single day should be close to the daily target (within 10-15% margin).
     5. Avoid repeating the same recipe within the same week if possible.
-    6. Use ONLY the recipes provided in the list below.
+    6. Use ONLY the recipes provided in the list below. The recipe list has already been pre-filtered to exclude recipes incompatible with the user's dietary restrictions and allergies.
     7. Provide the response in a JSON format.
     8. The week starts on ${weekDays[0]}. Order the days as: ${weekDays.join(', ')}.
+    9. CRITICAL: Do NOT select any recipe that conflicts with the user's dietary restrictions or allergies. Recipes containing allergens or restricted ingredients must NEVER be selected.
 
     Recipe List:
     ${JSON.stringify(recipeList)}
@@ -642,8 +680,15 @@ const getMealSwapAlternatives = async (userId, options = {}) => {
 
   let alternatives = await Recipe.find(
     query,
-    'name category nutrition recipeImage personsServing'
+    'name category nutrition recipeImage personsServing ingredients'
   ).lean();
+
+  // Filter out recipes that conflict with user dietary restrictions/allergies
+  const user = await User.findById(userId);
+  if (user) {
+    const excluded = getExcludedIngredients(user);
+    alternatives = filterRecipesByDiet(alternatives, excluded);
+  }
 
   alternatives = alternatives.filter((recipe) => {
     const kcal = Number(recipe?.nutrition?.kcal || 0);
