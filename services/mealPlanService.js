@@ -395,8 +395,8 @@ const generateWeeklyMealPlan = async (userId, { nextWeek = false } = {}) => {
     - Daily Target: ${userProfile.dailyCalories} kcal, ${userProfile.dailyProtein}g Protein, ${userProfile.dailyCarbs}g Carbs, ${userProfile.dailyFat}g Fat.
     - Meal Preferences: ${userProfile.preferences.join(', ')}
     - Dietary Restrictions: ${userProfile.restrictions.join(', ')}
-    - Unwanted Ingredients: ${userProfile.unwanted.join(', ')}
-    - Allergies: ${userProfile.allergies.join(', ')}
+    - Allergies (unwanted ingredients): ${userProfile.unwanted.join(', ')}
+    - User Allergies: ${userProfile.allergies.join(', ')}
 
     Rules:
     1. For each day, you must select EXACTLY one recipe for each type in the user's "Meal Preferences".

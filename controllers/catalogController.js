@@ -1,7 +1,7 @@
 const Allergy = require('../models/Allergy');
 const DietaryPreference = require('../models/DietaryPreference');
 
-// ── Allergies (used as "Unwanted Ingredients" in the app) ──
+// ── Allergies ──
 
 const getAllergiesForAdmin = async (req, res, next) => {
   try {
