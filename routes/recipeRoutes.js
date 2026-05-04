@@ -1,7 +1,9 @@
 const express = require('express');
 const { Recipe } = require('../models/Recipe');
+const User = require('../models/User');
 const upload = require('../config/multer');
 const { sanitizeIngredientList } = require('../utils/ingredientSanitizer');
+const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -39,6 +41,15 @@ router.get('/', async (req, res) => {
       currentPage: Number(page),
       totalResults,
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/user/favourites', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).populate('favouriteRecipes');
+    res.json({ recipes: user.favouriteRecipes || [] });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -99,6 +110,29 @@ router.delete('/:id', async (req, res) => {
     const recipe = await Recipe.findByIdAndDelete(req.params.id);
     if (!recipe) return res.status(404).json({ message: 'Recipe not found' });
     res.json({ message: 'Recipe deleted' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.patch('/:id/favourite', protect, async (req, res) => {
+  try {
+    const recipeId = req.params.id;
+    const recipe = await Recipe.findById(recipeId);
+    if (!recipe) return res.status(404).json({ message: 'Recipe not found' });
+
+    const user = await User.findById(req.user._id);
+    const index = user.favouriteRecipes.indexOf(recipeId);
+    const isFavourited = index === -1;
+
+    if (isFavourited) {
+      user.favouriteRecipes.push(recipeId);
+    } else {
+      user.favouriteRecipes.splice(index, 1);
+    }
+    await user.save();
+
+    res.json({ isFavourited, favouriteCount: user.favouriteRecipes.length });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

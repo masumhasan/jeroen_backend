@@ -194,6 +194,10 @@ const userSchema = new mongoose.Schema(
         ]
       }
     ],
+    favouriteRecipes: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Recipe',
+    }],
   },
   {
     timestamps: true,
