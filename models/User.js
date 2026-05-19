@@ -198,6 +198,10 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Recipe',
     }],
+    avatar: {
+      type: String,
+      default: '',
+    },
   },
   {
     timestamps: true,

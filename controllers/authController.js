@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const authService = require('../services/authService');
 const mealPlanService = require('../services/mealPlanService');
 const User = require('../models/User');
@@ -125,6 +127,40 @@ const updateMyWeight = async (req, res, next) => {
     res.status(200).json({
       status: 'success',
       data: { user },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const uploadAvatar = async (req, res, next) => {
+  try {
+    console.log('[uploadAvatar] content-type:', req.headers['content-type']);
+    console.log('[uploadAvatar] req.file:', req.file);
+    if (!req.file) {
+      return res.status(400).json({ status: 'fail', message: 'No image file provided' });
+    }
+
+    const avatarPath = `/uploads/avatars/${req.file.filename}`;
+
+    // Delete previous avatar file if it was an uploaded one
+    const oldAvatar = req.user.avatar;
+    if (oldAvatar && oldAvatar.startsWith('/uploads/avatars/')) {
+      const oldFilePath = path.join(__dirname, '..', oldAvatar);
+      if (fs.existsSync(oldFilePath)) {
+        fs.unlinkSync(oldFilePath);
+      }
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { avatar: avatarPath },
+      { new: true }
+    );
+
+    res.status(200).json({
+      status: 'success',
+      data: { user: updatedUser, avatarPath },
     });
   } catch (error) {
     next(error);
@@ -278,14 +314,14 @@ const getUsersForAdmin = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .select('firstName lastName email phoneNumber createdAt accountStatus role');
+      .select('firstName lastName email phoneNumber createdAt accountStatus role avatar');
 
     const mapped = users.map((user) => ({
       id: user._id,
       fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
       email: user.email || '',
       mobileNumber: user.phoneNumber || '',
-      profilePicture: '',
+      profilePicture: user.avatar || '',
       Joined: user.createdAt ? user.createdAt.toISOString().slice(0, 10) : '',
       location: '',
       status: user.accountStatus === 'suspended' ? 'Inactive' : 'Active',
@@ -330,14 +366,14 @@ const searchUsersForAdmin = async (req, res, next) => {
     })
       .sort({ createdAt: -1 })
       .limit(25)
-      .select('firstName lastName email phoneNumber createdAt accountStatus role');
+      .select('firstName lastName email phoneNumber createdAt accountStatus role avatar');
 
     const mapped = users.map((user) => ({
       id: user._id,
       fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
       email: user.email || '',
       mobileNumber: user.phoneNumber || '',
-      profilePicture: '',
+      profilePicture: user.avatar || '',
       Joined: user.createdAt ? user.createdAt.toISOString().slice(0, 10) : '',
       location: '',
       status: user.accountStatus === 'suspended' ? 'Inactive' : 'Active',
@@ -432,6 +468,7 @@ module.exports = {
   getMe,
   updateMe,
   updateMyWeight,
+  uploadAvatar,
   generateMealPlan,
   getMealPlan,
   getProgress,

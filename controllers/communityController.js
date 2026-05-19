@@ -138,8 +138,10 @@ const buildFeedPostResponse = (post, meId) => ({
         firstName: post.user.firstName,
         lastName: post.user.lastName,
         fullName: `${post.user.firstName || ''} ${post.user.lastName || ''}`.trim(),
+        avatar: post.user.avatar || null,
       }
     : null,
+  userAvatar: post.user?.avatar || null,
   postType: post.postType || 'text',
   mealPlanData: post.mealPlanData || null,
   mealPlanHtml: post.mealPlanHtml || null,
@@ -168,7 +170,7 @@ const getFeed = async (req, res, next) => {
 
     const posts = await Post.find(query)
       .sort({ createdAt: -1 })
-      .populate('user', 'firstName lastName')
+      .populate('user', 'firstName lastName avatar')
       .populate('topic', 'name color')
       .populate('topics', 'name color')
       .lean();
@@ -206,7 +208,7 @@ const createPost = async (req, res, next) => {
     });
 
     const populated = await Post.findById(post._id)
-      .populate('user', 'firstName lastName')
+      .populate('user', 'firstName lastName avatar')
       .populate('topic', 'name color')
       .populate('topics', 'name color');
 
@@ -222,10 +224,10 @@ const createPost = async (req, res, next) => {
 const getPostDetails = async (req, res, next) => {
   try {
     const post = await Post.findById(req.params.postId)
-      .populate('user', 'firstName lastName')
+      .populate('user', 'firstName lastName avatar')
       .populate('topic', 'name color')
       .populate('topics', 'name color')
-      .populate('comments.user', 'firstName lastName')
+      .populate('comments.user', 'firstName lastName avatar')
       .lean();
 
     if (!post) {
@@ -241,7 +243,8 @@ const getPostDetails = async (req, res, next) => {
             id: comment.user._id,
             firstName: comment.user.firstName,
             lastName: comment.user.lastName,
-            fullName: `${comment.user.firstName || ''} ${comment.user.lastName || ''}`.trim()
+            fullName: `${comment.user.firstName || ''} ${comment.user.lastName || ''}`.trim(),
+            avatar: comment.user.avatar || null,
           }
         : null
     }));
@@ -308,7 +311,7 @@ const addComment = async (req, res, next) => {
     await post.save();
 
     const latestComment = post.comments[post.comments.length - 1];
-    const user = await User.findById(req.user._id).select('firstName lastName').lean();
+    const user = await User.findById(req.user._id).select('firstName lastName avatar').lean();
 
     res.status(201).json({
       status: 'success',
@@ -322,7 +325,8 @@ const addComment = async (req, res, next) => {
                 id: user._id,
                 firstName: user.firstName,
                 lastName: user.lastName,
-                fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim()
+                fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+                avatar: user.avatar || null,
               }
             : null
         },
@@ -354,7 +358,7 @@ const updatePost = async (req, res, next) => {
     await post.save();
 
     const populated = await Post.findById(post._id)
-      .populate('user', 'firstName lastName')
+      .populate('user', 'firstName lastName avatar')
       .populate('topic', 'name color')
       .populate('topics', 'name color')
       .lean();
@@ -529,7 +533,7 @@ const shareMealPlan = async (req, res, next) => {
     });
 
     const populated = await Post.findById(post._id)
-      .populate('user', 'firstName lastName')
+      .populate('user', 'firstName lastName avatar')
       .populate('topic', 'name color')
       .populate('topics', 'name color');
 

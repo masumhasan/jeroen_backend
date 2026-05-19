@@ -2,6 +2,7 @@ const express = require('express');
 const authController = require('../controllers/authController');
 const catalogController = require('../controllers/catalogController');
 const { protect } = require('../middleware/authMiddleware');
+const { uploadAvatar } = require('../config/multer');
 
 const router = express.Router();
 
@@ -15,6 +16,7 @@ router.post('/dashboard-signin', authController.dashboardSignin);
 router.get('/me', protect, authController.getMe);
 router.patch('/me', protect, authController.updateMe);
 router.patch('/me/weight', protect, authController.updateMyWeight);
+router.patch('/me/avatar', protect, uploadAvatar.single('avatar'), authController.uploadAvatar);
 router.get('/progress', protect, authController.getProgress);
 
 router.get('/meal-plan', protect, authController.getMealPlan);
