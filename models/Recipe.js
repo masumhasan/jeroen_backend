@@ -65,6 +65,14 @@ const recipeSchema = new mongoose.Schema({
     required: [true, 'Book number is required'],
     min: 1,
   },
+  bookTitle: {
+    type: String,
+    required: [true, 'Book title is required'],
+  },
+  bookSku: {
+    type: String,
+    required: [true, 'Book SKU is required'],
+  },
   recipeImage: {
     type: String,
     default: DEFAULT_IMAGE,

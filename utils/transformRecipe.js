@@ -1,5 +1,6 @@
 const { DEFAULT_IMAGE } = require('../models/Recipe');
 const { sanitizeIngredientList } = require('./ingredientSanitizer');
+const { getBookMetadata } = require('./bookMetadata');
 
 /**
  * Safely parses a numeric string that may use commas as decimal separators.
@@ -19,6 +20,7 @@ function safeParseNumber(value) {
  * @returns {object} Transformed recipe ready for Mongoose
  */
 function transformRecipe(raw, bookNumber) {
+  const metadata = getBookMetadata(bookNumber);
   return {
     number: raw.Number,
     name: (raw.Name || '').trim(),
@@ -35,6 +37,8 @@ function transformRecipe(raw, bookNumber) {
       vezels: safeParseNumber(raw.VEZELS),
     },
     book: bookNumber,
+    bookTitle: metadata.title,
+    bookSku: metadata.sku,
     recipeImage: DEFAULT_IMAGE,
   };
 }

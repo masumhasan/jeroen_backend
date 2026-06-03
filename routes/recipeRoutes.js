@@ -3,6 +3,7 @@ const { Recipe } = require('../models/Recipe');
 const User = require('../models/User');
 const upload = require('../config/multer');
 const { sanitizeIngredientList } = require('../utils/ingredientSanitizer');
+const { getBookMetadata } = require('../utils/bookMetadata');
 const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -75,6 +76,14 @@ router.post('/', upload.single('recipe_image'), async (req, res) => {
     if (req.file) {
       data.recipeImage = `/uploads/${req.file.filename}`;
     }
+
+    // Add book metadata
+    if (data.book) {
+      const metadata = getBookMetadata(Number(data.book));
+      data.bookTitle = metadata.title;
+      data.bookSku = metadata.sku;
+    }
+
     const recipe = await Recipe.create(data);
     res.status(201).json(recipe);
   } catch (err) {
@@ -94,6 +103,14 @@ router.put('/:id', upload.single('recipe_image'), async (req, res) => {
     if (req.file) {
       data.recipeImage = `/uploads/${req.file.filename}`;
     }
+
+    // Update book metadata if book number changed
+    if (data.book) {
+      const metadata = getBookMetadata(Number(data.book));
+      data.bookTitle = metadata.title;
+      data.bookSku = metadata.sku;
+    }
+
     const recipe = await Recipe.findByIdAndUpdate(req.params.id, data, {
       new: true,
       runValidators: true,
