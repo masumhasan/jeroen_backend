@@ -70,6 +70,15 @@ const userRecipeSchema = new mongoose.Schema({
     enum: ['pending', 'approved', 'declined'],
     default: 'pending',
   },
+  rejectionFeedback: {
+    type: String,
+    trim: true,
+    default: null,
+  },
+  rejectionFeedbackReadAt: {
+    type: Date,
+    default: null,
+  },
 }, {
   timestamps: true,
 });

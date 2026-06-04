@@ -82,10 +82,45 @@ router.get('/approved', async (req, res) => {
 // GET user's own submitted recipes
 router.get('/my', protect, async (req, res) => {
   try {
-    const recipes = await UserRecipe.find({ submittedBy: req.user._id })
-      .sort({ createdAt: -1 })
-      .lean();
-    res.json({ recipes });
+    const filter = { submittedBy: req.user._id };
+    const unreadFilter = {
+      ...filter,
+      status: 'declined',
+      rejectionFeedback: { $nin: [null, ''] },
+      rejectionFeedbackReadAt: null,
+    };
+
+    const [recipes, unreadFeedbackCount] = await Promise.all([
+      UserRecipe.find(filter)
+        .sort({ createdAt: -1 })
+        .lean(),
+      UserRecipe.countDocuments(unreadFilter),
+    ]);
+
+    res.json({ recipes, unreadFeedbackCount });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PATCH mark all recipe rejection feedback as read for the current user
+router.patch('/my/feedback/read', protect, async (req, res) => {
+  try {
+    const filter = {
+      submittedBy: req.user._id,
+      status: 'declined',
+      rejectionFeedback: { $nin: [null, ''] },
+      rejectionFeedbackReadAt: null,
+    };
+
+    const result = await UserRecipe.updateMany(filter, {
+      $set: { rejectionFeedbackReadAt: new Date() },
+    });
+
+    res.json({
+      message: 'Feedback marked as read',
+      updatedCount: result.modifiedCount || 0,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -117,6 +152,8 @@ router.post('/', protect, upload.single('recipe_image'), async (req, res) => {
     }
     data.submittedBy = req.user._id;
     data.status = 'pending';
+    data.rejectionFeedback = null;
+    data.rejectionFeedbackReadAt = null;
 
     const recipe = await UserRecipe.create(data);
     res.status(201).json(recipe);
@@ -146,6 +183,8 @@ router.put('/:id', protect, upload.single('recipe_image'), async (req, res) => {
     }
     delete data.submittedBy;
     data.status = 'pending';
+    data.rejectionFeedback = null;
+    data.rejectionFeedbackReadAt = null;
 
     const recipe = await UserRecipe.findByIdAndUpdate(req.params.id, data, {
       new: true,
@@ -184,7 +223,7 @@ router.patch('/:id/approve', protect, requireDashboardAccess, async (req, res) =
   try {
     const recipe = await UserRecipe.findByIdAndUpdate(
       req.params.id,
-      { status: 'approved' },
+      { status: 'approved', rejectionFeedback: null, rejectionFeedbackReadAt: null },
       { new: true }
     ).populate('submittedBy', 'firstName lastName email');
     if (!recipe) return res.status(404).json({ message: 'Recipe not found' });
@@ -197,9 +236,21 @@ router.patch('/:id/approve', protect, requireDashboardAccess, async (req, res) =
 // PATCH decline a user recipe (admin only)
 router.patch('/:id/decline', protect, requireDashboardAccess, async (req, res) => {
   try {
+    const rejectionFeedback = String(
+      req.body?.rejectionFeedback ?? req.body?.feedback ?? ''
+    ).trim();
+
+    if (!rejectionFeedback) {
+      return res.status(400).json({ message: 'Reject feedback is required' });
+    }
+
     const recipe = await UserRecipe.findByIdAndUpdate(
       req.params.id,
-      { status: 'declined' },
+      {
+        status: 'declined',
+        rejectionFeedback,
+        rejectionFeedbackReadAt: null,
+      },
       { new: true }
     ).populate('submittedBy', 'firstName lastName email');
     if (!recipe) return res.status(404).json({ message: 'Recipe not found' });
