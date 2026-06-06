@@ -150,4 +150,30 @@ router.patch('/:id/reject', protect, requireDashboardAccess, async (req, res) =>
   }
 });
 
+// PATCH — dashboard: revoke a previously approved request → remove SKU from purchasedBooks
+router.patch('/:id/revoke', protect, requireDashboardAccess, async (req, res) => {
+  try {
+    const request = await BookAccessRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ message: 'Request not found' });
+    if (request.status !== 'approved') {
+      return res.status(400).json({ message: 'Only approved requests can be revoked' });
+    }
+
+    await Promise.all([
+      BookAccessRequest.findByIdAndUpdate(req.params.id, { status: 'revoked' }),
+      User.findByIdAndUpdate(request.userId, {
+        $pull: { purchasedBooks: request.bookSku },
+      }),
+    ]);
+
+    const updated = await BookAccessRequest.findById(req.params.id)
+      .populate('userId', 'firstName lastName email')
+      .lean();
+
+    res.json({ status: 'success', data: updated });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 module.exports = router;
