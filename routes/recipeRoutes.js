@@ -10,7 +10,7 @@ const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
-    const { search, category, book, page = 1, limit = 10 } = req.query;
+    const { search, category, book, bookSku, page = 1, limit = 10 } = req.query;
     const query = {};
 
     if (search) {
@@ -22,6 +22,9 @@ router.get('/', async (req, res) => {
     }
     if (book) {
       query.book = Number(book);
+    }
+    if (bookSku) {
+      query.bookSku = bookSku;
     }
 
     const skip = (Number(page) - 1) * Number(limit);
