@@ -88,6 +88,7 @@ router.get('/my', protect, async (req, res) => {
       status: 'declined',
       rejectionFeedback: { $nin: [null, ''] },
       rejectionFeedbackReadAt: null,
+      rejectionFeedbackDismissedAt: null,
     };
 
     const [recipes, unreadFeedbackCount] = await Promise.all([
@@ -111,6 +112,7 @@ router.patch('/my/feedback/read', protect, async (req, res) => {
       status: 'declined',
       rejectionFeedback: { $nin: [null, ''] },
       rejectionFeedbackReadAt: null,
+      rejectionFeedbackDismissedAt: null,
     };
 
     const result = await UserRecipe.updateMany(filter, {
@@ -121,6 +123,25 @@ router.patch('/my/feedback/read', protect, async (req, res) => {
       message: 'Feedback marked as read',
       updatedCount: result.modifiedCount || 0,
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PATCH dismiss specific recipe rejection feedback
+router.patch('/my/feedback/:id/dismiss', protect, async (req, res) => {
+  try {
+    const recipe = await UserRecipe.findOneAndUpdate(
+      { _id: req.params.id, submittedBy: req.user._id },
+      { $set: { rejectionFeedbackDismissedAt: new Date() } },
+      { new: true }
+    );
+
+    if (!recipe) {
+      return res.status(404).json({ message: 'Recipe not found or not yours' });
+    }
+
+    res.json({ message: 'Feedback dismissed successfully' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

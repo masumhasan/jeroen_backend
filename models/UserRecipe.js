@@ -79,6 +79,10 @@ const userRecipeSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  rejectionFeedbackDismissedAt: {
+    type: Date,
+    default: null,
+  },
 }, {
   timestamps: true,
 });
