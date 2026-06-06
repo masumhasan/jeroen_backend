@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const authService = require('../services/authService');
 const mealPlanService = require('../services/mealPlanService');
+const shopifyService = require('../services/shopifyService');
 const User = require('../models/User');
 const MealPlan = require('../models/MealPlan');
 const {
@@ -274,6 +275,23 @@ const getMealSwapAlternatives = async (req, res, next) => {
   }
 };
 
+const claimBooks = async (req, res, next) => {
+  try {
+    const skus = await shopifyService.getBookSkusByEmail(req.user.email);
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { purchasedBooks: skus },
+      { new: true }
+    );
+    res.status(200).json({
+      status: 'success',
+      data: { purchasedBooks: user.purchasedBooks },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 const swapMeal = async (req, res, next) => {
   try {
     const result = await mealPlanService.swapMealInPlan(req.user._id, req.body);
@@ -469,6 +487,7 @@ module.exports = {
   updateMe,
   updateMyWeight,
   uploadAvatar,
+  claimBooks,
   generateMealPlan,
   getMealPlan,
   getProgress,

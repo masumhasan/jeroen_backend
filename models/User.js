@@ -198,6 +198,11 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Recipe',
     }],
+    // Shopify book entitlements — array of purchased SKUs (e.g. 'LK-LISAKOOKTK-DEF')
+    purchasedBooks: {
+      type: [String],
+      default: [],
+    },
     avatar: {
       type: String,
       default: '',

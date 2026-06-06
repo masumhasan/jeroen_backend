@@ -17,6 +17,7 @@ router.get('/me', protect, authController.getMe);
 router.patch('/me', protect, authController.updateMe);
 router.patch('/me/weight', protect, authController.updateMyWeight);
 router.patch('/me/avatar', protect, uploadAvatar.single('avatar'), authController.uploadAvatar);
+router.post('/me/claim-books', protect, authController.claimBooks);
 router.get('/progress', protect, authController.getProgress);
 
 router.get('/meal-plan', protect, authController.getMealPlan);
