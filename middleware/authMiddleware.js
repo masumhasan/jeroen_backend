@@ -15,7 +15,18 @@ const protect = async (req, res, next) => {
   }
 
   // Verify token
-  const decoded = jwt.verify(token, process.env.JWT_SECRET);
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (err) {
+    const error = new Error(
+      err.name === 'TokenExpiredError'
+        ? 'Your session has expired. Please log in again.'
+        : 'Invalid token. Please log in again.'
+    );
+    error.statusCode = 401;
+    throw error;
+  }
 
   // Check if user still exists
   const currentUser = await User.findById(decoded.id);
