@@ -4,7 +4,9 @@
   "description": "jeroen_backend",
   "main": "server.js",
   "scripts": {
+    "dev": "nodemon server.js",
     "start": "node server.js",
+    "build": "node --check server.js && echo Build OK",
     "import": "node scripts/importRecipes.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -26,5 +28,8 @@
     "nodemailer": "^9.0.1",
     "openai": "^6.34.0",
     "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }
