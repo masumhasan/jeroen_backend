@@ -5,8 +5,10 @@ const s3 = require('../config/s3');
 const authService = require('../services/authService');
 const mealPlanService = require('../services/mealPlanService');
 const shopifyService = require('../services/shopifyService');
+const { sendOtpEmail } = require('../services/emailService');
 const User = require('../models/User');
 const MealPlan = require('../models/MealPlan');
+const OtpToken = require('../models/OtpToken');
 const {
   signupSchema,
   signinSchema,
@@ -489,9 +491,69 @@ const deleteUserForAdmin = async (req, res, next) => {
   }
 };
 
+const sendOtp = async (req, res, next) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ message: 'Email is required' });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Replace any existing OTP for this email
+    await OtpToken.deleteMany({ email });
+    await OtpToken.create({ email, otp });
+
+    // DEV: log OTP to console — remove before production
+    console.log(`[DEV] OTP for ${email}: ${otp}`);
+
+    await sendOtpEmail(email, otp);
+
+    res.json({ status: 'success', message: 'OTP sent to email' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const verifyOtp = async (req, res, next) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const otp = String(req.body?.otp || '').trim();
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: 'Email and OTP are required' });
+    }
+
+    const record = await OtpToken.findOne({ email });
+    if (!record) {
+      return res.status(400).json({ message: 'OTP is verlopen of niet gevonden. Vraag een nieuwe aan.' });
+    }
+
+    if (record.attempts >= 5) {
+      await OtpToken.deleteOne({ email });
+      return res.status(400).json({ message: 'Te veel pogingen. Vraag een nieuwe OTP aan.' });
+    }
+
+    if (record.otp !== otp) {
+      record.attempts += 1;
+      await record.save();
+      const remaining = 5 - record.attempts;
+      return res.status(400).json({
+        message: `Onjuiste code. Nog ${remaining} poging${remaining !== 1 ? 'en' : ''} over.`,
+      });
+    }
+
+    // Correct — delete and confirm
+    await OtpToken.deleteOne({ email });
+    res.json({ status: 'success', message: 'OTP geverifieerd' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   signup,
   checkSignupAvailability,
+  sendOtp,
+  verifyOtp,
   signin,
   dashboardSignin,
   getMe,
