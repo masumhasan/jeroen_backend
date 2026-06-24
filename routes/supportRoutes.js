@@ -1,5 +1,5 @@
 const express = require('express');
-const upload = require('../config/multer');
+const { uploadSupport } = require('../config/multer');
 const { protect } = require('../middleware/authMiddleware');
 const supportController = require('../controllers/supportController');
 
@@ -7,7 +7,7 @@ const router = express.Router();
 
 function optionalSupportImageUpload(req, res, next) {
   if (req.is('multipart/form-data')) {
-    return upload.single('support_image')(req, res, next);
+    return uploadSupport.single('support_image')(req, res, next);
   }
   return next();
 }

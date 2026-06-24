@@ -1,60 +1,66 @@
 const multer = require('multer');
+const multerS3 = require('multer-s3');
 const path = require('path');
-const fs = require('fs');
+const s3 = require('./s3');
 
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
-const AVATAR_DIR = path.join(__dirname, '..', 'uploads', 'avatars');
+const BUCKET = process.env.AWS_S3_BUCKET_NAME;
 
-[UPLOAD_DIR, AVATAR_DIR].forEach((dir) => {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-});
-
-const fileFilter = (_req, file, cb) => {
-  const allowed = /jpeg|jpg|png|gif|webp|svg/;
-  const extOk = allowed.test(path.extname(file.originalname).toLowerCase());
-  const mimeOk = allowed.test(file.mimetype);
-  cb(null, extOk && mimeOk);
+const mimeToExt = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
 };
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-  filename: (_req, file, cb) => {
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    const ext = path.extname(file.originalname);
-    cb(null, `recipe-${uniqueSuffix}${ext}`);
-  },
-});
+function makeS3Storage(folder, prefix) {
+  return multerS3({
+    s3,
+    bucket: BUCKET,
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    key(_req, file, cb) {
+      const ext = mimeToExt[file.mimetype] || path.extname(file.originalname).replace('.', '') || 'jpg';
+      const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      cb(null, `${folder}/${prefix}-${uniqueSuffix}.${ext}`);
+    },
+  });
+}
 
-// Derive extension from MIME type so Android content:// URIs (no extension) still work
-const mimeToExt = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' };
-
-const avatarStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, AVATAR_DIR),
-  filename: (_req, file, cb) => {
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    const ext = mimeToExt[file.mimetype] || path.extname(file.originalname).replace('.', '') || 'jpg';
-    cb(null, `avatar-${uniqueSuffix}.${ext}`);
-  },
-});
-
-// Avatar filter: only check MIME type — originalname may have no extension for Android URIs
-const avatarFileFilter = (_req, file, cb) => {
-  console.log('[avatarFileFilter] mimetype:', file.mimetype, '| originalname:', file.originalname);
-  const allowed = /^image\/(jpeg|jpg|png|gif|webp)$/;
+const imageFileFilter = (_req, file, cb) => {
+  const allowed = /^image\/(jpeg|jpg|png|gif|webp|svg\+xml)$/;
   cb(null, allowed.test(file.mimetype));
 };
 
+// recipes/ — for admin-managed recipes and user-submitted recipes
 const upload = multer({
-  storage,
-  fileFilter,
+  storage: makeS3Storage('recipes', 'recipe'),
+  fileFilter: imageFileFilter,
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
+// avatars/ — for user profile pictures
 const uploadAvatar = multer({
-  storage: avatarStorage,
-  fileFilter: avatarFileFilter,
+  storage: makeS3Storage('avatars', 'avatar'),
+  fileFilter: imageFileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+// community/ — for community post images
+const uploadPost = multer({
+  storage: makeS3Storage('community', 'post'),
+  fileFilter: imageFileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+// support/ — for support message attachments
+const uploadSupport = multer({
+  storage: makeS3Storage('support', 'support'),
+  fileFilter: imageFileFilter,
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
 module.exports = upload;
 module.exports.uploadAvatar = uploadAvatar;
+module.exports.uploadPost = uploadPost;
+module.exports.uploadSupport = uploadSupport;

@@ -1,5 +1,7 @@
 const path = require('path');
 const fs = require('fs');
+const { PutObjectCommand } = require('@aws-sdk/client-s3');
+const s3 = require('../config/s3');
 const Topic = require('../models/Topic');
 const Post = require('../models/Post');
 const User = require('../models/User');
@@ -198,7 +200,7 @@ const createPost = async (req, res, next) => {
       return res.status(404).json({ message: 'One or more topics not found' });
     }
 
-    const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
+    const imagePath = req.file ? req.file.location : null;
     const post = await Post.create({
       user: req.user._id,
       topic: topicIds[0],
@@ -506,17 +508,26 @@ const shareMealPlan = async (req, res, next) => {
     let imagePath = null;
     try {
       const nodeHtmlToImage = require('node-html-to-image');
-      const uploadsDir = path.join(__dirname, '..', 'uploads');
-      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+      const tmpDir = path.join(__dirname, '..', 'uploads');
+      if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
       const filename = `mealplan-${Date.now()}-${Math.round(Math.random() * 1e9)}.png`;
-      const outputPath = path.join(uploadsDir, filename);
+      const tmpPath = path.join(tmpDir, filename);
       await nodeHtmlToImage({
-        output: outputPath,
+        output: tmpPath,
         html: mealPlanHtml,
         transparent: false,
         puppeteerArgs: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }
       });
-      imagePath = `/uploads/${filename}`;
+      const fileBuffer = fs.readFileSync(tmpPath);
+      const s3Key = `mealplans/${filename}`;
+      await s3.send(new PutObjectCommand({
+        Bucket: process.env.AWS_S3_BUCKET_NAME,
+        Key: s3Key,
+        Body: fileBuffer,
+        ContentType: 'image/png',
+      }));
+      fs.unlinkSync(tmpPath);
+      imagePath = `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
     } catch (imgErr) {
       console.error('Meal plan image generation failed (non-fatal):', imgErr.message);
     }

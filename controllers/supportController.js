@@ -79,7 +79,7 @@ exports.markMyThreadRead = async (req, res, next) => {
 exports.postUserMessage = async (req, res, next) => {
   try {
     const body = String(req.body.body || '').trim();
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    const imageUrl = req.file ? req.file.location : null;
     if (!body && !imageUrl) {
       return res.status(400).json({
         status: 'error',

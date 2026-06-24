@@ -77,7 +77,7 @@ router.post('/', upload.single('recipe_image'), async (req, res) => {
       return res.status(400).json({ message: 'At least one valid ingredient is required' });
     }
     if (req.file) {
-      data.recipeImage = `/uploads/${req.file.filename}`;
+      data.recipeImage = req.file.location;
     }
 
     // Add book metadata
@@ -104,7 +104,7 @@ router.put('/:id', upload.single('recipe_image'), async (req, res) => {
       }
     }
     if (req.file) {
-      data.recipeImage = `/uploads/${req.file.filename}`;
+      data.recipeImage = req.file.location;
     }
 
     // Update book metadata if book number changed

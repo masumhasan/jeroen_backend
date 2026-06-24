@@ -169,7 +169,7 @@ router.post('/', protect, upload.single('recipe_image'), async (req, res) => {
       return res.status(400).json({ message: 'At least one valid ingredient is required' });
     }
     if (req.file) {
-      data.recipeImage = `/uploads/${req.file.filename}`;
+      data.recipeImage = req.file.location;
     }
     data.submittedBy = req.user._id;
     data.status = 'pending';
@@ -200,7 +200,7 @@ router.put('/:id', protect, upload.single('recipe_image'), async (req, res) => {
       }
     }
     if (req.file) {
-      data.recipeImage = `/uploads/${req.file.filename}`;
+      data.recipeImage = req.file.location;
     }
     delete data.submittedBy;
     data.status = 'pending';

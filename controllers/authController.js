@@ -1,5 +1,7 @@
 const path = require('path');
 const fs = require('fs');
+const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const s3 = require('../config/s3');
 const authService = require('../services/authService');
 const mealPlanService = require('../services/mealPlanService');
 const shopifyService = require('../services/shopifyService');
@@ -142,15 +144,24 @@ const uploadAvatar = async (req, res, next) => {
       return res.status(400).json({ status: 'fail', message: 'No image file provided' });
     }
 
-    const avatarPath = `/uploads/avatars/${req.file.filename}`;
+    const avatarPath = req.file.location;
 
-    // Delete previous avatar file if it was an uploaded one
+    // Delete previous avatar from S3 if it was an uploaded one
     const oldAvatar = req.user.avatar;
-    if (oldAvatar && oldAvatar.startsWith('/uploads/avatars/')) {
-      const oldFilePath = path.join(__dirname, '..', oldAvatar);
-      if (fs.existsSync(oldFilePath)) {
-        fs.unlinkSync(oldFilePath);
+    if (oldAvatar && oldAvatar.includes('.amazonaws.com/')) {
+      try {
+        const oldKey = oldAvatar.split('.amazonaws.com/')[1];
+        await s3.send(new DeleteObjectCommand({
+          Bucket: process.env.AWS_S3_BUCKET_NAME,
+          Key: oldKey,
+        }));
+      } catch (delErr) {
+        console.error('[uploadAvatar] Failed to delete old S3 avatar (non-fatal):', delErr.message);
       }
+    } else if (oldAvatar && oldAvatar.startsWith('/uploads/avatars/')) {
+      // Legacy local file — delete from disk if it still exists
+      const oldFilePath = path.join(__dirname, '..', oldAvatar);
+      if (fs.existsSync(oldFilePath)) fs.unlinkSync(oldFilePath);
     }
 
     const updatedUser = await User.findByIdAndUpdate(
