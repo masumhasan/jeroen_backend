@@ -557,6 +557,97 @@ const shareMealPlan = async (req, res, next) => {
   }
 };
 
+const getPostsForAdmin = async (req, res, next) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const search = String(req.query.search || '').trim();
+
+    const filter = {};
+    if (search) {
+      filter.$or = [
+        { content: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const totalCount = await Post.countDocuments(filter);
+    const totalPages = Math.max(Math.ceil(totalCount / limit), 1);
+    const safePage = Math.min(page, totalPages);
+    const skip = (safePage - 1) * limit;
+
+    const posts = await Post.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('user', 'firstName lastName email avatar')
+      .populate('topic', 'name color')
+      .lean();
+
+    const mapped = posts.map((post) => ({
+      id: post._id,
+      content: post.content || '',
+      postType: post.postType || 'text',
+      image: post.image || null,
+      likeCount: (post.likedBy || []).length,
+      commentCount: (post.comments || []).length,
+      createdAt: post.createdAt,
+      user: post.user
+        ? {
+            id: post.user._id,
+            name: `${post.user.firstName || ''} ${post.user.lastName || ''}`.trim(),
+            email: post.user.email || '',
+            avatar: post.user.avatar || null,
+          }
+        : null,
+      topic: post.topic
+        ? { id: post.topic._id, name: post.topic.name, color: post.topic.color }
+        : null,
+    }));
+
+    res.status(200).json({
+      success: true,
+      message: 'Posts fetched successfully',
+      data: {
+        meta: { page: safePage, limit, totalCount, totalPages },
+        posts: mapped,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deletePostForAdmin = async (req, res, next) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+
+    // Delete image from S3 if it was uploaded
+    if (post.image && post.image.includes('.amazonaws.com/')) {
+      try {
+        const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+        const s3Client = require('../config/s3');
+        const key = post.image.split('.amazonaws.com/')[1];
+        await s3Client.send(new DeleteObjectCommand({
+          Bucket: process.env.AWS_S3_BUCKET_NAME,
+          Key: key,
+        }));
+      } catch (delErr) {
+        console.error('[deletePostForAdmin] S3 delete failed (non-fatal):', delErr.message);
+      }
+    }
+
+    await Post.deleteOne({ _id: postId });
+
+    res.status(200).json({ success: true, message: 'Post deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getTopics,
   toggleFollowTopic,
@@ -571,5 +662,7 @@ module.exports = {
   getTopicsForAdmin,
   createTopicByAdmin,
   updateTopicByAdmin,
-  deleteTopicByAdmin
+  deleteTopicByAdmin,
+  getPostsForAdmin,
+  deletePostForAdmin,
 };
