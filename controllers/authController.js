@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
 const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const s3 = require('../config/s3');
 const authService = require('../services/authService');
@@ -498,9 +499,9 @@ const sendOtp = async (req, res, next) => {
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // Replace any existing OTP for this email
-    await OtpToken.deleteMany({ email });
-    await OtpToken.create({ email, otp });
+    // Replace any existing signup OTP for this email
+    await OtpToken.deleteMany({ email, purpose: 'signup' });
+    await OtpToken.create({ email, otp, purpose: 'signup' });
 
     // DEV: log OTP to console — remove before production
     console.log(`[DEV] OTP for ${email}: ${otp}`);
@@ -522,13 +523,13 @@ const verifyOtp = async (req, res, next) => {
       return res.status(400).json({ message: 'Email and OTP are required' });
     }
 
-    const record = await OtpToken.findOne({ email });
+    const record = await OtpToken.findOne({ email, purpose: 'signup' });
     if (!record) {
       return res.status(400).json({ message: 'OTP is verlopen of niet gevonden. Vraag een nieuwe aan.' });
     }
 
     if (record.attempts >= 5) {
-      await OtpToken.deleteOne({ email });
+      await OtpToken.deleteOne({ email, purpose: 'signup' });
       return res.status(400).json({ message: 'Te veel pogingen. Vraag een nieuwe OTP aan.' });
     }
 
@@ -542,8 +543,120 @@ const verifyOtp = async (req, res, next) => {
     }
 
     // Correct — delete and confirm
-    await OtpToken.deleteOne({ email });
+    await OtpToken.deleteOne({ email, purpose: 'signup' });
     res.json({ status: 'success', message: 'OTP geverifieerd' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const sendForgotPasswordOtp = async (req, res, next) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ status: 'fail', message: 'Email is required' });
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ status: 'fail', message: 'No account found with this email address.' });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await OtpToken.deleteMany({ email, purpose: 'password-reset' });
+    await OtpToken.create({ email, otp, purpose: 'password-reset' });
+
+    console.log(`[DEV] Password reset OTP for ${email}: ${otp}`);
+    await sendOtpEmail(email, otp);
+
+    res.json({ status: 'success', message: 'OTP sent to email' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const verifyForgotPasswordOtp = async (req, res, next) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const otp = String(req.body?.otp || '').trim();
+
+    if (!email || !otp) {
+      return res.status(400).json({ status: 'fail', message: 'Email and OTP are required' });
+    }
+
+    const record = await OtpToken.findOne({ email, purpose: 'password-reset' });
+    if (!record) {
+      return res.status(400).json({ status: 'fail', message: 'OTP expired or not found. Please request a new one.' });
+    }
+
+    if (record.attempts >= 5) {
+      await OtpToken.deleteOne({ email, purpose: 'password-reset' });
+      return res.status(400).json({ status: 'fail', message: 'Too many attempts. Please request a new OTP.' });
+    }
+
+    if (record.otp !== otp) {
+      record.attempts += 1;
+      await record.save();
+      const remaining = 5 - record.attempts;
+      return res.status(400).json({
+        status: 'fail',
+        message: `Invalid OTP. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`,
+      });
+    }
+
+    await OtpToken.deleteOne({ email, purpose: 'password-reset' });
+
+    const resetToken = jwt.sign(
+      { email, purpose: 'password-reset' },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    res.json({
+      status: 'success',
+      message: 'OTP verified',
+      data: { resetToken, isValid: true },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const resendForgotPasswordOtp = async (req, res, next) => {
+  return sendForgotPasswordOtp(req, res, next);
+};
+
+const resetPassword = async (req, res, next) => {
+  try {
+    const { resetToken, newPassword } = req.body;
+    const email = String(req.body?.email || '').trim().toLowerCase();
+
+    if (!email || !resetToken || !newPassword) {
+      return res.status(400).json({ status: 'fail', message: 'Email, reset token, and new password are required' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
+    } catch {
+      return res.status(400).json({ status: 'fail', message: 'Reset token is invalid or expired' });
+    }
+
+    if (decoded.purpose !== 'password-reset' || decoded.email !== email) {
+      return res.status(400).json({ status: 'fail', message: 'Invalid reset token' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ status: 'fail', message: 'Password must be at least 8 characters' });
+    }
+
+    const user = await User.findOne({ email }).select('+password');
+    if (!user) {
+      return res.status(404).json({ status: 'fail', message: 'User not found' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ status: 'success', message: 'Password reset successfully' });
   } catch (error) {
     next(error);
   }
@@ -554,6 +667,10 @@ module.exports = {
   checkSignupAvailability,
   sendOtp,
   verifyOtp,
+  sendForgotPasswordOtp,
+  verifyForgotPasswordOtp,
+  resendForgotPasswordOtp,
+  resetPassword,
   signin,
   dashboardSignin,
   getMe,

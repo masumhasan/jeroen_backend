@@ -13,6 +13,11 @@ router.post('/signup', authController.signup);
 router.post('/signup/check-availability', authController.checkSignupAvailability);
 router.post('/signup/send-otp', authController.sendOtp);
 router.post('/signup/verify-otp', authController.verifyOtp);
+router.post('/forgot-password', authController.sendForgotPasswordOtp);
+router.post('/verify-otp', authController.verifyForgotPasswordOtp);
+router.post('/resend-otp', authController.resendForgotPasswordOtp);
+router.post('/reset-password', authController.resetPassword);
+
 router.post('/signin', authController.signin);
 router.post('/dashboard-signin', authController.dashboardSignin);
 router.get('/me', protect, authController.getMe);
