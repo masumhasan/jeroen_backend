@@ -23,6 +23,9 @@ router.patch(
   authController.updateUserRoleForAdmin
 );
 
+router.get('/posts', communityController.getPostsForAdmin);
+router.delete('/posts/:postId', communityController.deletePostForAdmin);
+
 router.get('/topics', communityController.getTopicsForAdmin);
 router.post('/topics', communityController.createTopicByAdmin);
 router.put('/topics/:topicId', communityController.updateTopicByAdmin);
